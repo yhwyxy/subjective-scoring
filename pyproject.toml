@@ -1,0 +1,87 @@
+[project]
+name = "subjective-scoring"
+version = "0.1.0"
+description = "Multi-engine subjective answer scoring: text scoring-points, SQL AST, code hybrid (structure + semantic)."
+readme = "README.md"
+requires-python = ">=3.12"
+license = { text = "MIT" }
+authors = [
+    { name = "故里海棠" },
+]
+keywords = [
+    "scoring",
+    "education",
+    "exam",
+    "sql",
+    "code",
+    "cross-encoder",
+    "reranker",
+]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Education",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Education",
+    "Topic :: Software Development :: Libraries",
+]
+dependencies = [
+    "pydantic>=2.7",
+]
+
+[project.optional-dependencies]
+text = [
+    "ftfy>=6.3",
+]
+sql = [
+    "sqlglot>=30.0",
+]
+code = [
+    "tree-sitter>=0.25",
+    "tree-sitter-python>=0.23",
+    "tree-sitter-java>=0.23",
+    "tree-sitter-javascript>=0.23",
+    "tree-sitter-cpp>=0.23",
+]
+semantic = [
+    "sentence-transformers>=3.0",
+    "torch>=2.2",
+]
+all = [
+    "subjective-scoring[text,sql,code,semantic]",
+]
+dev = [
+    "pytest>=8.0",
+    "subjective-scoring[text,sql,code]",
+]
+
+[project.urls]
+Homepage = "https://github.com/yhwyxy/subjective-scoring"
+Repository = "https://github.com/yhwyxy/subjective-scoring"
+Issues = "https://github.com/yhwyxy/subjective-scoring/issues"
+
+[build-system]
+requires = ["hatchling>=1.25"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/subjective_scoring"]
+
+[tool.hatch.build.targets.sdist]
+include = [
+    "/src",
+    "/tests",
+    "/examples",
+    "/README.md",
+    "/LICENSE",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+
+[tool.uv]
+package = true

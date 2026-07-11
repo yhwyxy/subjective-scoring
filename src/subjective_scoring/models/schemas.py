@@ -1,0 +1,322 @@
+"""主观题自动评分模块的统一请求 / 中间结果 / 最终结果数据模型。
+
+字段语义对齐设计文档：
+docs/superpowers/specs/2026-07-11-subjective-scoring-design.md
+
+约定：
+- Python 侧统一 snake_case（与现有 FastAPI 接口一致）。
+- 枚举使用 str 继承，便于 JSON 序列化与日志输出。
+- 分数 / 置信度做基础边界校验，业务阈值由 ScoringOptions 配置。
+"""
+
+from __future__ import annotations
+
+from enum import Enum
+from typing import Any
+
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+
+
+# ---------------------------------------------------------------------------
+# 枚举
+# ---------------------------------------------------------------------------
+
+
+class ScoringMode(str, Enum):
+    """评分模式：Router 优先依赖显式 scoring_mode。"""
+
+    TEXT = "text"
+    SQL = "sql"
+    CODE = "code"
+
+
+class ReviewLevel(str, Enum):
+    """人工复核等级。"""
+
+    AUTO_PASS = "auto_pass"
+    SUGGESTED_REVIEW = "suggested_review"
+    MANUAL_REQUIRED = "manual_required"
+
+
+# 复核等级严重程度：数值越大越严格，供 Aggregator 取最严结果。
+REVIEW_LEVEL_RANK: dict[ReviewLevel, int] = {
+    ReviewLevel.AUTO_PASS: 0,
+    ReviewLevel.SUGGESTED_REVIEW: 1,
+    ReviewLevel.MANUAL_REQUIRED: 2,
+}
+
+
+# ---------------------------------------------------------------------------
+# 请求侧嵌套结构
+# ---------------------------------------------------------------------------
+
+
+class ScoringPoint(BaseModel):
+    """人工配置的结构化评分点（文本题第一版推荐必配）。"""
+
+    model_config = ConfigDict(extra="forbid")
+
+    id: str = Field(..., min_length=1, description="评分点唯一标识")
+    text: str = Field(..., min_length=1, description="评分点描述文本")
+    score: float = Field(..., ge=0, description="该评分点满分")
+    required: bool = Field(default=False, description="是否为必答知识点")
+
+
+class ManualReviewThresholds(BaseModel):
+    """置信度阈值：auto_pass / review 分界。"""
+
+    model_config = ConfigDict(extra="forbid")
+
+    auto_pass: float = Field(
+        default=0.85,
+        ge=0.0,
+        le=1.0,
+        description="confidence >= auto_pass 时自动通过",
+    )
+    review: float = Field(
+        default=0.6,
+        ge=0.0,
+        le=1.0,
+        description="confidence < review 时必须人工处理；介于 review 与 auto_pass 之间建议复核",
+    )
+
+    @model_validator(mode="after")
+    def _check_order(self) -> ManualReviewThresholds:
+        if self.review > self.auto_pass:
+            raise ValueError("manual_review_thresholds.review 不得大于 auto_pass")
+        return self
+
+
+class CodeScoreWeights(BaseModel):
+    """代码题语义分 / 结构分融合权重，默认 0.7 / 0.3。"""
+
+    model_config = ConfigDict(extra="forbid")
+
+    semantic: float = Field(default=0.7, ge=0.0, le=1.0)
+    structure: float = Field(default=0.3, ge=0.0, le=1.0)
+
+    @model_validator(mode="after")
+    def _check_sum(self) -> CodeScoreWeights:
+        total = self.semantic + self.structure
+        if abs(total - 1.0) > 1e-6:
+            raise ValueError(
+                f"code_score_weights.semantic + structure 必须等于 1.0，当前为 {total}"
+            )
+        return self
+
+
+class ScoringOptions(BaseModel):
+    """单次评分的可调参数（对应设计文档 scoringConfig）。
+
+    与 backend.config.ScoringConfig（客观题给分规则）无关。
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    manual_review_thresholds: ManualReviewThresholds = Field(
+        default_factory=ManualReviewThresholds,
+    )
+    code_score_weights: CodeScoreWeights = Field(
+        default_factory=CodeScoreWeights,
+    )
+    allow_auto_scoring_point_generation: bool = Field(
+        default=False,
+        description="是否允许自动生成评分点；第一版默认关闭",
+    )
+    score_precision: int = Field(
+        default=1,
+        ge=0,
+        le=6,
+        description="最终得分小数位数",
+    )
+
+
+# ---------------------------------------------------------------------------
+# ScoringRequest
+# ---------------------------------------------------------------------------
+
+
+class ScoringRequest(BaseModel):
+    """主观题评分统一请求。"""
+
+    model_config = ConfigDict(extra="forbid")
+
+    question_id: str = Field(..., min_length=1)
+    paper_id: str | None = Field(default=None, description="试卷 ID，可选")
+    question_type: str = Field(
+        default="subjective",
+        description="题型元数据；Router 次优先依赖此字段",
+    )
+    scoring_mode: ScoringMode | None = Field(
+        default=None,
+        description="显式评分模式 text/sql/code；优先于其他路由信号",
+    )
+    code_language: str | None = Field(
+        default=None,
+        description="代码语言，如 sql/python/java/javascript/cpp/go",
+    )
+    course_type: str | None = Field(
+        default=None,
+        description="课程 / 学科类型，作为弱路由信号",
+    )
+    max_score: float = Field(..., ge=0, description="题目满分")
+    question: str = Field(default="", description="题干")
+    reference_answer: str = Field(default="", description="标准答案")
+    scoring_points: list[ScoringPoint] = Field(
+        default_factory=list,
+        description="人工评分点；文本题第一版推荐配置",
+    )
+    student_answer: str = Field(default="", description="学生作答")
+    scoring_config: ScoringOptions = Field(
+        default_factory=ScoringOptions,
+        description="本次评分的阈值与权重配置",
+    )
+
+    @field_validator("code_language")
+    @classmethod
+    def _normalize_code_language(cls, v: str | None) -> str | None:
+        if v is None:
+            return None
+        normalized = v.strip().lower()
+        return normalized or None
+
+    @model_validator(mode="after")
+    def _check_scoring_points_total(self) -> ScoringRequest:
+        if not self.scoring_points:
+            return self
+        total = sum(p.score for p in self.scoring_points)
+        # 允许评分点合计略小于满分（部分选答点），但禁止明显超分
+        if total > self.max_score + 1e-6:
+            raise ValueError(
+                f"scoring_points 分值合计 ({total}) 超过 max_score ({self.max_score})"
+            )
+        return self
+
+
+# ---------------------------------------------------------------------------
+# 中间结果（各 Scorer 统一输出）
+# ---------------------------------------------------------------------------
+
+
+class EvidenceItem(BaseModel):
+    """命中或未命中证据条目。"""
+
+    model_config = ConfigDict(extra="forbid")
+
+    point_id: str | None = Field(
+        default=None,
+        description="关联评分点 ID；SQL/Code 结构证据可为空，由 Aggregator 合成",
+    )
+    score: float = Field(default=0.0, ge=0)
+    max_score: float = Field(default=0.0, ge=0)
+    evidence: str | None = Field(default=None, description="学生答案中的对应片段")
+    reason: str | None = Field(default=None, description="判分说明")
+    similarity: float | None = Field(
+        default=None,
+        ge=0.0,
+        le=1.0,
+        description="语义 / 结构相似度，可选",
+    )
+
+
+class IntermediateScoreResult(BaseModel):
+    """各评分引擎统一中间结果，供 ScoreAggregator 合并。"""
+
+    model_config = ConfigDict(extra="forbid")
+
+    scorer: str = Field(..., min_length=1, description="评分器名称")
+    scoring_mode: ScoringMode
+    score: float = Field(..., ge=0)
+    max_score: float = Field(..., ge=0)
+    confidence: float = Field(..., ge=0.0, le=1.0)
+    matched_evidence: list[EvidenceItem] = Field(default_factory=list)
+    missed_evidence: list[EvidenceItem] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+    force_manual_review: bool = Field(
+        default=False,
+        description=(
+            "引擎强制人工复核（解析失败、否定冲突、AST 失败、全文兜底等）；"
+            "Aggregator 取最严等级，不会因 confidence 高而被自动通过掩盖"
+        ),
+    )
+    metadata: dict[str, Any] = Field(
+        default_factory=dict,
+        description="引擎侧元数据，如 model/parser 名称",
+    )
+
+    @model_validator(mode="after")
+    def _check_score_cap(self) -> IntermediateScoreResult:
+        if self.score > self.max_score + 1e-6:
+            raise ValueError(
+                f"中间分 score ({self.score}) 超过 max_score ({self.max_score})"
+            )
+        return self
+
+
+# ---------------------------------------------------------------------------
+# ScoringResult
+# ---------------------------------------------------------------------------
+
+
+class MatchedPoint(BaseModel):
+    """最终结果中的命中评分点。"""
+
+    model_config = ConfigDict(extra="forbid")
+
+    point_id: str
+    score: float = Field(..., ge=0)
+    max_score: float = Field(..., ge=0)
+    similarity: float | None = Field(default=None, ge=0.0, le=1.0)
+    evidence: str | None = None
+    reason: str | None = None
+
+
+class MissedPoint(BaseModel):
+    """最终结果中的未命中评分点。"""
+
+    model_config = ConfigDict(extra="forbid")
+
+    point_id: str
+    score: float = Field(default=0.0, ge=0)
+    max_score: float = Field(..., ge=0)
+    reason: str | None = None
+
+
+class ScoringResult(BaseModel):
+    """主观题评分统一输出。"""
+
+    model_config = ConfigDict(extra="forbid")
+
+    question_id: str = Field(..., min_length=1)
+    score: float = Field(..., ge=0)
+    max_score: float = Field(..., ge=0)
+    scoring_mode: ScoringMode
+    track: str = Field(
+        ...,
+        min_length=1,
+        description="实际走的评分轨道，如 TextRerankerScorer",
+    )
+    confidence: float = Field(..., ge=0.0, le=1.0)
+    need_manual_review: bool = Field(
+        ...,
+        description="是否需要人工介入（suggested_review 或 manual_required）",
+    )
+    review_level: ReviewLevel
+    matched_points: list[MatchedPoint] = Field(default_factory=list)
+    missed_points: list[MissedPoint] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def _check_consistency(self) -> ScoringResult:
+        if self.score > self.max_score + 1e-6:
+            raise ValueError(
+                f"最终分 score ({self.score}) 超过 max_score ({self.max_score})"
+            )
+        # review_level 与 need_manual_review 保持一致
+        expects_review = self.review_level != ReviewLevel.AUTO_PASS
+        if self.need_manual_review != expects_review:
+            raise ValueError(
+                "need_manual_review 必须与 review_level 一致："
+                "auto_pass -> False，其余 -> True"
+            )
+        return self
