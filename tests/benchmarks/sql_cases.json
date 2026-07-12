@@ -1,0 +1,30 @@
+[
+  {
+    "id": "sql-equivalent",
+    "mode": "sql",
+    "quality": "complete",
+    "ordering_group": "users",
+    "expected_band": [9.0, 10.0],
+    "request": {
+      "question_id": "users",
+      "max_score": 10,
+      "scoring_mode": "sql",
+      "reference_answer": "SELECT id, name FROM users WHERE active = 1",
+      "student_answer": "select id, name from users where active = 1"
+    }
+  },
+  {
+    "id": "sql-delete",
+    "mode": "sql",
+    "quality": "wrong",
+    "ordering_group": "users",
+    "expected_band": [0.0, 0.0],
+    "request": {
+      "question_id": "users",
+      "max_score": 10,
+      "scoring_mode": "sql",
+      "reference_answer": "SELECT id, name FROM users WHERE active = 1",
+      "student_answer": "DELETE FROM users"
+    }
+  }
+]

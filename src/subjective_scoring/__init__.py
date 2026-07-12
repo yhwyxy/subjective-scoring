@@ -28,9 +28,11 @@ from .components import (
 )
 from .engines import (
     CodeHybridScorer,
+    PiecewiseLinearCalibrator,
     RuleInterceptor,
     SQLStructureScorer,
     ScoringPointResolver,
+    ScoreCalibrator,
     TextRerankerScorer,
 )
 from .models import (
@@ -74,6 +76,7 @@ __all__ = [
     "MissedPoint",
     "NormalizationResult",
     "PipelineTrace",
+    "PiecewiseLinearCalibrator",
     "QuestionTypeRouter",
     "CohereRerankerPairScorer",
     "RemoteRerankerError",
@@ -89,6 +92,7 @@ __all__ = [
     "ScoringOptions",
     "ScoringPoint",
     "ScoringPointResolver",
+    "ScoreCalibrator",
     "ScoringRequest",
     "ScoringResult",
     "ScoringServiceResult",

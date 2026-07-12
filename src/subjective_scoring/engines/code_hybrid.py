@@ -111,6 +111,8 @@ class StructureFeatures:
     flags: dict[str, bool] = field(default_factory=dict)
     call_names: set[str] = field(default_factory=set)
     identifiers: set[str] = field(default_factory=set)
+    function_names: set[str] = field(default_factory=set)
+    recursive_functions: set[str] = field(default_factory=set)
     node_types: set[str] = field(default_factory=set)
     parse_ok: bool = True
     error: str | None = None
@@ -139,10 +141,19 @@ class TreeSitterAstExtractor:
             return StructureFeatures(parse_ok=False, error=str(e))
 
         root = tree.root_node
+        if getattr(root, "has_error", False):
+            return StructureFeatures(parse_ok=False, error="代码包含语法错误")
         node_types: set[str] = set()
         identifiers: set[str] = set()
         call_names: set[str] = set()
+        function_defs: list[tuple[str, int, int]] = []
+        call_sites: list[tuple[str, int]] = []
         source = code.encode("utf-8")
+
+        def node_text(node: Any) -> str:
+            return source[node.start_byte : node.end_byte].decode(
+                "utf-8", errors="ignore"
+            )
 
         stack = [root]
         while stack:
@@ -150,13 +161,24 @@ class TreeSitterAstExtractor:
             node_types.add(node.type)
             if node.type in {"identifier", "type_identifier", "property_identifier"}:
                 try:
-                    identifiers.add(
-                        source[node.start_byte : node.end_byte].decode(
-                            "utf-8", errors="ignore"
-                        )
-                    )
+                    identifiers.add(node_text(node))
                 except Exception:
                     pass
+            if node.type in _FEATURE_NODE_TYPES["function"]:
+                name_node = None
+                try:
+                    name_node = node.child_by_field_name("name")
+                except Exception:
+                    pass
+                if name_node is None:
+                    name_node = next(
+                        (child for child in node.children if child.type == "identifier"),
+                        None,
+                    )
+                if name_node is not None:
+                    name = node_text(name_node).split(".")[-1].lower()
+                    if name:
+                        function_defs.append((name, node.start_byte, node.end_byte))
             if node.type in {"call", "call_expression", "method_invocation"}:
                 for child in node.children:
                     if child.type in {
@@ -166,10 +188,9 @@ class TreeSitterAstExtractor:
                         "field_access",
                     }:
                         try:
-                            name = source[child.start_byte : child.end_byte].decode(
-                                "utf-8", errors="ignore"
-                            )
-                            call_names.add(name.split(".")[-1])
+                            name = node_text(child).split(".")[-1].lower()
+                            call_names.add(name)
+                            call_sites.append((name, node.start_byte))
                         except Exception:
                             pass
                         break
@@ -182,13 +203,20 @@ class TreeSitterAstExtractor:
         if call_names & _IO_IDENTIFIERS or identifiers & _IO_IDENTIFIERS:
             flags["io"] = True
 
-        func_defs = {ident for ident in identifiers if ident in call_names}
-        flags["recursion"] = bool(func_defs) and flags.get("function", False)
+        function_names = {name for name, _, _ in function_defs}
+        recursive_functions = {
+            name
+            for name, start, end in function_defs
+            if any(call_name == name and start < position < end for call_name, position in call_sites)
+        }
+        flags["recursion"] = bool(recursive_functions)
 
         return StructureFeatures(
             flags=flags,
             call_names={c.lower() for c in call_names},
             identifiers={i.lower() for i in identifiers},
+            function_names=function_names,
+            recursive_functions=recursive_functions,
             node_types=node_types,
             parse_ok=True,
         )
@@ -291,6 +319,15 @@ class CodeHybridScorer:
 
     name = "CodeHybridScorer"
     DEFAULT_MODEL = "BAAI/bge-reranker-base"
+    _POINT_FEATURE_PATTERNS = {
+        "recursion": re.compile(r"递归|自身调用|self.?call", re.IGNORECASE),
+        "loop": re.compile(r"循环|遍历|for|while", re.IGNORECASE),
+        "conditional": re.compile(r"条件|判断|分支|if|switch", re.IGNORECASE),
+        "function": re.compile(r"函数|方法|function|method", re.IGNORECASE),
+        "return": re.compile(r"返回|return", re.IGNORECASE),
+        "exception": re.compile(r"异常|错误处理|try|catch|except", re.IGNORECASE),
+        "io": re.compile(r"输入|输出|读写|print|input|I/O", re.IGNORECASE),
+    }
 
     def __init__(
         self,
@@ -318,6 +355,8 @@ class CodeHybridScorer:
         stu = self.normalizer.normalize(request.student_answer, lang)
         warnings: list[str] = []
         force_review = False
+        applied_caps: list[str] = []
+        warnings.append("代码题结果为静态估分，未执行学生代码")
 
         if not ref:
             warnings.append("参考代码为空")
@@ -366,6 +405,12 @@ class CodeHybridScorer:
                 f"语义分 ({semantic_sim:.2f}) 与结构分 ({structure_sim:.2f}) 差异较大"
             )
             force_review = True
+
+        structure_conflict = semantic_sim >= 0.75 and structure_sim < 0.30
+        if structure_conflict:
+            warnings.append("语义相似度高但结构明显冲突，得分上限为满分的 50%")
+            force_review = True
+            applied_caps.append("semantic_structure_conflict:0.5")
 
         confidence = final_sim
         if force_review:
@@ -420,6 +465,61 @@ class CodeHybridScorer:
         matched.extend(_scale(s_matched))
         missed.extend(_scale(s_missed))
 
+        point_diagnostics: list[dict[str, object]] = []
+        if request.scoring_points:
+            matched = []
+            missed = []
+            point_total = sum(point.score for point in request.scoring_points) or request.max_score
+            awarded = 0.0
+            for point in request.scoring_points:
+                feature = self._feature_for_point(point.text)
+                if feature is None:
+                    point_similarity = final_sim
+                    reason = "该行为评分点无法由静态分析确认，按混合相似度估分，待执行测试验证"
+                else:
+                    point_similarity = (
+                        1.0 if stu_feat.parse_ok and stu_feat.flags.get(feature) else 0.0
+                    )
+                    reason = (
+                        f"静态结构特征 {feature}: "
+                        f"学生代码{'具备' if point_similarity else '缺失'}"
+                    )
+                point_score = round(point.score * point_similarity, precision)
+                awarded += point_score
+                item = EvidenceItem(
+                    point_id=point.id,
+                    score=point_score,
+                    max_score=point.score,
+                    reason=reason,
+                    similarity=round(float(point_similarity), 4),
+                )
+                if point_similarity >= 0.5:
+                    matched.append(item)
+                else:
+                    missed.append(item)
+                    if point.required and feature is not None:
+                        force_review = True
+                        warnings.append(f"必答代码评分点缺失: {point.id}")
+                point_diagnostics.append(
+                    {
+                        "point_id": point.id,
+                        "feature": feature,
+                        "statically_verifiable": feature is not None,
+                        "similarity": round(float(point_similarity), 4),
+                    }
+                )
+            final_score = round(awarded / point_total * request.max_score, precision)
+
+        if not stu_feat.parse_ok:
+            cap = round(request.max_score * 0.20, precision)
+            final_score = min(final_score, cap)
+            applied_caps.append("student_parse_failure:0.2")
+        if structure_conflict:
+            cap = round(request.max_score * 0.50, precision)
+            final_score = min(final_score, cap)
+        if force_review:
+            confidence = min(confidence, 0.55)
+
         return IntermediateScoreResult(
             scorer=self.name,
             scoring_mode=ScoringMode.CODE,
@@ -440,8 +540,18 @@ class CodeHybridScorer:
                     "semantic": weights.semantic,
                     "structure": weights.structure,
                 },
+                "assessment_type": "static_estimate",
+                "applied_caps": applied_caps,
+                "point_diagnostics": point_diagnostics,
             },
         )
+
+    @classmethod
+    def _feature_for_point(cls, text: str) -> str | None:
+        for feature, pattern in cls._POINT_FEATURE_PATTERNS.items():
+            if pattern.search(text or ""):
+                return feature
+        return None
 
     def __call__(self, request: ScoringRequest) -> IntermediateScoreResult:
         return self.score(request)

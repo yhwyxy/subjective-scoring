@@ -1,0 +1,37 @@
+[
+  {
+    "id": "code-correct",
+    "mode": "code",
+    "quality": "complete",
+    "ordering_group": "dedupe",
+    "expected_band": [8.0, 10.0],
+    "request": {
+      "question_id": "dedupe",
+      "max_score": 10,
+      "scoring_mode": "code",
+      "code_language": "python",
+      "reference_answer": "def dedupe(items):\n    seen = set()\n    out = []\n    for item in items:\n        if item not in seen:\n            seen.add(item)\n            out.append(item)\n    return out",
+      "student_answer": "def dedupe(items):\n    seen = set()\n    result = []\n    for item in items:\n        if item not in seen:\n            seen.add(item)\n            result.append(item)\n    return result",
+      "scoring_points": [
+        {"id": "loop", "text": "循环遍历输入", "score": 3, "required": true},
+        {"id": "return", "text": "返回去重结果", "score": 2},
+        {"id": "behavior", "text": "去重并保持首次出现顺序", "score": 5, "required": true}
+      ]
+    }
+  },
+  {
+    "id": "code-wrong",
+    "mode": "code",
+    "quality": "wrong",
+    "ordering_group": "dedupe",
+    "expected_band": [0.0, 2.0],
+    "request": {
+      "question_id": "dedupe",
+      "max_score": 10,
+      "scoring_mode": "code",
+      "code_language": "python",
+      "reference_answer": "def dedupe(items):\n    return list(dict.fromkeys(items))",
+      "student_answer": "def dedupe(items):\n    return sum(items)"
+    }
+  }
+]

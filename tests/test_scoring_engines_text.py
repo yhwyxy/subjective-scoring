@@ -40,7 +40,7 @@ def test_scores_points_with_injected_similarity():
     assert result.metadata["model"] == "injected"
 
 
-def test_negation_conflict_zeros_point_and_forces_review():
+def test_negation_conflict_penalizes_point_and_forces_review():
     def sim(student: str, point: str) -> float:
         return 0.95
 
@@ -52,9 +52,79 @@ def test_negation_conflict_zeros_point_and_forces_review():
         )
     )
 
-    assert result.score == 0.0
+    assert 0.0 < result.score < 5.0
     assert result.force_manual_review is True
     assert any("否定" in w for w in result.warnings)
+    diagnostic = result.metadata["point_diagnostics"][0]
+    assert diagnostic["raw_similarity"] == 0.95
+    assert diagnostic["rule_hits"][0]["evidence"] == "索引不能提高查询效率"
+
+
+def test_stateless_domain_phrases_do_not_trigger_negation_conflict():
+    scorer = TextRerankerScorer(
+        pair_scorer=lambda student, point: 0.9,
+        allow_model_load=False,
+    )
+    for student_answer in (
+        "REST 通信是无状态的",
+        "每次请求自包含，服务端不保存客户端会话状态",
+    ):
+        result = scorer.score(
+            _req(
+                scoring_points=[
+                    {
+                        "id": "stateless",
+                        "text": "客户端与服务端通信保持无状态",
+                        "score": 10,
+                    }
+                ],
+                student_answer=student_answer,
+            )
+        )
+        assert not any("否定词冲突" in warning for warning in result.warnings)
+        assert result.score >= 8.0
+
+
+def test_stateful_answer_conflicts_with_stateless_point():
+    scorer = TextRerankerScorer(
+        pair_scorer=lambda student, point: 0.95,
+        allow_model_load=False,
+    )
+    result = scorer.score(
+        _req(
+            scoring_points=[
+                {"id": "stateless", "text": "REST 通信保持无状态", "score": 10}
+            ],
+            student_answer="REST 是有状态的",
+        )
+    )
+    assert result.force_manual_review is True
+    assert any("否定词冲突" in warning for warning in result.warnings)
+
+
+def test_negation_only_applies_to_the_local_uniform_interface_clause():
+    scorer = TextRerankerScorer(
+        pair_scorer=lambda student, point: 0.95,
+        allow_model_load=False,
+    )
+    result = scorer.score(
+        _req(
+            scoring_points=[
+                {"id": "uniform", "text": "REST 要求统一接口", "score": 10}
+            ],
+            student_answer="REST 不要求统一接口，但服务端不保存会话状态",
+        )
+    )
+    assert result.force_manual_review is True
+    assert any("uniform" in warning for warning in result.warnings)
+
+
+def test_rule_interceptor_accepts_extensible_domain_polarity_rules():
+    interceptor = RuleInterceptor(
+        polarity_rules=[("read_only", r"只读", r"可写|允许写入")]
+    )
+    result = interceptor.check("接口必须只读", "接口允许写入数据", "readonly")
+    assert any(hit.kind == "negation" for hit in result.hits)
 
 
 def test_full_reference_fallback_forces_review():

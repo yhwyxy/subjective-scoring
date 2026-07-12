@@ -237,7 +237,16 @@ def test_close_does_not_close_injected_client():
     client.close()
 
 
-def test_context_manager_closes_owned_client():
+def test_context_manager_closes_owned_client(monkeypatch):
+    for name in (
+        "ALL_PROXY",
+        "all_proxy",
+        "HTTP_PROXY",
+        "http_proxy",
+        "HTTPS_PROXY",
+        "https_proxy",
+    ):
+        monkeypatch.delenv(name, raising=False)
     scorer = CohereRerankerPairScorer(
         url=URL,
         api_key=API_KEY,
@@ -282,8 +291,9 @@ def test_remote_pair_scorer_integrates_with_subjective_service():
         }
     )
 
-    assert result.score == 5.0
+    assert result.score == 9.0
     assert result.track == "TextRerankerScorer"
+    assert "原始相关度 0.20；校准覆盖度 0.80" in result.matched_points[1].reason
 
 
 def test_remote_pair_scorer_integrates_with_code_scoring():

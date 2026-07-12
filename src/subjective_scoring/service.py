@@ -25,6 +25,7 @@ from subjective_scoring.components.router import (
     ScorerProtocol,
 )
 from subjective_scoring.engines.code_hybrid import CodeHybridScorer
+from subjective_scoring.engines.calibration import ScoreCalibrator
 from subjective_scoring.engines.sql_structure import SQLStructureScorer
 from subjective_scoring.engines.text_reranker import TextRerankerScorer
 from subjective_scoring.models import (
@@ -122,6 +123,7 @@ class SubjectiveScoringService:
         aggregator: ScoreAggregatorComponent | None = None,
         text_pair_scorer=None,
         code_pair_scorer=None,
+        text_calibrator: ScoreCalibrator | None = None,
     ) -> None:
         """创建评分服务。
 
@@ -157,6 +159,7 @@ class SubjectiveScoringService:
                     pair_scorer=text_pair_scorer,
                     allow_model_load=allow_model_load,
                     model_name=self.text_model,
+                    calibrator=text_calibrator,
                 ),
                 ScoringMode.SQL: sql_scorer or SQLStructureScorer(),
                 ScoringMode.CODE: code_scorer

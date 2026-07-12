@@ -101,3 +101,51 @@ def test_tree_sitter_detects_loop():
     assert feat.flags.get("loop") is True
     assert feat.flags.get("function") is True
     assert feat.flags.get("return") is True
+
+
+def test_normal_function_call_is_not_recursion():
+    code = "def outer(x):\n    return helper(x)\n"
+    feat = TreeSitterAstExtractor().extract(code, "python")
+    assert feat.parse_ok is True
+    assert feat.flags.get("recursion") is False
+
+
+def test_self_call_is_recursion():
+    code = "def factorial(n):\n    return 1 if n <= 1 else n * factorial(n - 1)\n"
+    feat = TreeSitterAstExtractor().extract(code, "python")
+    assert feat.parse_ok is True
+    assert feat.flags.get("recursion") is True
+    assert feat.recursive_functions == {"factorial"}
+
+
+def test_parse_failure_caps_score_at_twenty_percent():
+    scorer = CodeHybridScorer(
+        pair_scorer=lambda a, b: 0.99,
+        allow_model_load=False,
+    )
+    result = scorer.score(_req("def broken(:\n    return 1"))
+    assert result.score <= 2.0
+    assert result.force_manual_review is True
+    assert "student_parse_failure:0.2" in result.metadata["applied_caps"]
+
+
+def test_scoring_points_drive_static_evidence_and_mark_behavior_unknown():
+    scorer = CodeHybridScorer(
+        pair_scorer=lambda a, b: 0.8,
+        allow_model_load=False,
+    )
+    result = scorer.score(
+        _req(
+            STU_PY_OK,
+            scoring_points=[
+                {"id": "loop", "text": "使用循环遍历输入", "score": 4, "required": True},
+                {"id": "behavior", "text": "计算结果完全正确", "score": 6},
+            ],
+        )
+    )
+    ids = {item.point_id for item in result.matched_evidence + result.missed_evidence}
+    assert ids == {"loop", "behavior"}
+    diagnostics = {item["point_id"]: item for item in result.metadata["point_diagnostics"]}
+    assert diagnostics["loop"]["statically_verifiable"] is True
+    assert diagnostics["behavior"]["statically_verifiable"] is False
+    assert result.metadata["assessment_type"] == "static_estimate"

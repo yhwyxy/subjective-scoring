@@ -1,0 +1,82 @@
+[
+  {
+    "id": "rest-complete",
+    "mode": "text",
+    "quality": "complete",
+    "ordering_group": "rest",
+    "expected_band": [8.0, 10.0],
+    "pair_scores": {"resource": 0.9, "method": 0.9, "stateless": 0.9},
+    "request": {
+      "question_id": "rest",
+      "max_score": 10,
+      "scoring_mode": "text",
+      "reference_answer": "REST 以资源为中心，使用 HTTP 方法并保持无状态。",
+      "student_answer": "围绕资源设计 URI，使用 HTTP 方法表达操作，服务端不保存客户端会话状态。",
+      "scoring_points": [
+        {"id": "resource", "text": "以资源为中心并用 URI 标识资源", "score": 4, "required": true},
+        {"id": "method", "text": "使用 HTTP 方法表达资源操作", "score": 3},
+        {"id": "stateless", "text": "通信保持无状态", "score": 3}
+      ]
+    }
+  },
+  {
+    "id": "rest-paraphrase",
+    "mode": "text",
+    "quality": "paraphrase",
+    "ordering_group": "rest",
+    "expected_band": [7.0, 9.0],
+    "pair_scores": {"resource": 0.78, "method": 0.76, "stateless": 0.8},
+    "request": {
+      "question_id": "rest",
+      "max_score": 10,
+      "scoring_mode": "text",
+      "reference_answer": "REST 以资源为中心，使用 HTTP 方法并保持无状态。",
+      "student_answer": "业务对象是可寻址实体，标准 HTTP 动词表达行为，单次调用自包含且不依赖历史上下文。",
+      "scoring_points": [
+        {"id": "resource", "text": "以资源为中心并用 URI 标识资源", "score": 4, "required": true},
+        {"id": "method", "text": "使用 HTTP 方法表达资源操作", "score": 3},
+        {"id": "stateless", "text": "通信保持无状态", "score": 3}
+      ]
+    }
+  },
+  {
+    "id": "rest-partial",
+    "mode": "text",
+    "quality": "partial",
+    "ordering_group": "rest",
+    "expected_band": [3.0, 6.0],
+    "pair_scores": {"resource": 0.9, "method": 0.1, "stateless": 0.1},
+    "request": {
+      "question_id": "rest",
+      "max_score": 10,
+      "scoring_mode": "text",
+      "reference_answer": "REST 以资源为中心，使用 HTTP 方法并保持无状态。",
+      "student_answer": "REST 接口把业务对象设计成资源，并为资源设置 URI。",
+      "scoring_points": [
+        {"id": "resource", "text": "以资源为中心并用 URI 标识资源", "score": 4, "required": true},
+        {"id": "method", "text": "使用 HTTP 方法表达资源操作", "score": 3},
+        {"id": "stateless", "text": "通信保持无状态", "score": 3}
+      ]
+    }
+  },
+  {
+    "id": "rest-wrong",
+    "mode": "text",
+    "quality": "wrong",
+    "ordering_group": "rest",
+    "expected_band": [0.0, 2.0],
+    "pair_scores": {"resource": 0.05, "method": 0.08, "stateless": 0.1},
+    "request": {
+      "question_id": "rest",
+      "max_score": 10,
+      "scoring_mode": "text",
+      "reference_answer": "REST 以资源为中心，使用 HTTP 方法并保持无状态。",
+      "student_answer": "REST 是有状态的，服务端必须永久保存会话。",
+      "scoring_points": [
+        {"id": "resource", "text": "以资源为中心并用 URI 标识资源", "score": 4, "required": true},
+        {"id": "method", "text": "使用 HTTP 方法表达资源操作", "score": 3},
+        {"id": "stateless", "text": "通信保持无状态", "score": 3}
+      ]
+    }
+  }
+]

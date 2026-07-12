@@ -62,3 +62,35 @@ def test_empty_student_sql():
     result = scorer.score(_req("SELECT 1", ""))
     assert result.force_manual_review is True
     assert result.score == 0.0 or result.score < 3
+
+
+def test_delete_against_select_is_always_zero():
+    result = SQLStructureScorer().score(
+        _req("SELECT id, name FROM users", "DELETE FROM users")
+    )
+    assert result.score == 0.0
+    assert result.force_manual_review is True
+    assert result.metadata["reference_statement_type"] == "SELECT"
+    assert result.metadata["student_statement_type"] == "DELETE"
+    assert result.metadata["rejection_reason"] == "statement_type_mismatch"
+
+
+def test_multiple_statements_are_rejected():
+    result = SQLStructureScorer().score(
+        _req("SELECT id FROM users", "SELECT id FROM users; DELETE FROM users")
+    )
+    assert result.score == 0.0
+    assert result.force_manual_review is True
+    assert result.metadata["rejection_reason"] == "parse_error"
+    assert any("只允许单条" in warning for warning in result.warnings)
+
+
+def test_absent_optional_dimensions_do_not_receive_weight():
+    result = SQLStructureScorer().score(
+        _req("SELECT name FROM users", "SELECT name FROM users")
+    )
+    assert result.metadata["active_dimensions"] == ["select", "from"]
+    assert {item.point_id for item in result.matched_evidence} == {
+        "sql.select",
+        "sql.from",
+    }

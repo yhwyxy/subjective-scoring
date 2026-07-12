@@ -53,42 +53,75 @@ class DimensionScore:
         return self.weight * self.similarity
 
 
+@dataclass
+class SQLComparisonResult:
+    dimensions: list[DimensionScore]
+    warnings: list[str]
+    force_review: bool
+    reference_type: str | None = None
+    student_type: str | None = None
+    active_dimensions: list[str] = field(default_factory=list)
+    rejection_reason: str | None = None
+
+
 class SQLAstComparator:
     """基于 sqlglot AST 的结构维度比较。"""
 
     def compare(self, ref_sql: str, stu_sql: str) -> tuple[list[DimensionScore], list[str], bool]:
+        result = self.compare_detailed(ref_sql, stu_sql)
+        return result.dimensions, result.warnings, result.force_review
+
+    def compare_detailed(self, ref_sql: str, stu_sql: str) -> SQLComparisonResult:
         warnings: list[str] = []
-        force_review = False
 
         if sqlglot is None:
             warnings.append("sqlglot 未安装，SQL 结构评分不可用")
-            return [], warnings, True
+            return SQLComparisonResult([], warnings, True)
 
         ref_ast, ref_err = self._parse(ref_sql)
         stu_ast, stu_err = self._parse(stu_sql)
 
         if ref_err:
             warnings.append(f"标准答案 SQL 解析失败: {ref_err}")
-            force_review = True
         if stu_err:
             warnings.append(f"学生答案 SQL 解析失败: {stu_err}")
-            force_review = True
 
         if ref_ast is None or stu_ast is None:
-            # 解析失败：退回规范化字符串相等
-            if ref_sql and stu_sql and ref_sql == stu_sql:
-                dims = [
-                    DimensionScore(n, w, 1.0, "规范化文本一致", True)
-                    for n, w in _DEFAULT_WEIGHTS.items()
-                ]
-            else:
-                dims = [
-                    DimensionScore(n, w, 0.0, "AST 不可用", False)
-                    for n, w in _DEFAULT_WEIGHTS.items()
-                ]
-            return dims, warnings, True
+            return SQLComparisonResult(
+                dimensions=[DimensionScore("statement", 1.0, 0.0, "AST 不可用", False)],
+                warnings=warnings,
+                force_review=True,
+                rejection_reason="parse_error",
+            )
 
-        dims = [
+        ref_type = self._statement_type(ref_ast)
+        stu_type = self._statement_type(stu_ast)
+        if ref_type != stu_type:
+            message = f"顶层语句类型不一致: ref={ref_type} stu={stu_type}"
+            warnings.append(message)
+            return SQLComparisonResult(
+                dimensions=[DimensionScore("statement", 1.0, 0.0, message, False)],
+                warnings=warnings,
+                force_review=True,
+                reference_type=ref_type,
+                student_type=stu_type,
+                active_dimensions=["statement"],
+                rejection_reason="statement_type_mismatch",
+            )
+
+        if ref_type != "SELECT":
+            warnings.append(f"第一阶段仅支持 SELECT 结构评分，当前为 {ref_type}")
+            return SQLComparisonResult(
+                dimensions=[DimensionScore("statement", 1.0, 0.0, "非 SELECT", False)],
+                warnings=warnings,
+                force_review=True,
+                reference_type=ref_type,
+                student_type=stu_type,
+                active_dimensions=["statement"],
+                rejection_reason="unsupported_statement_type",
+            )
+
+        all_dims = [
             self._score_select(ref_ast, stu_ast),
             self._score_from(ref_ast, stu_ast),
             self._score_join(ref_ast, stu_ast),
@@ -101,17 +134,50 @@ class SQLAstComparator:
             self._score_subquery(ref_ast, stu_ast),
             self._score_operators(ref_ast, stu_ast),
         ]
-        return dims, warnings, force_review
+        optional_active = {
+            "join": bool(self._join_signature(ref_ast)),
+            "where": bool(self._where_signature(ref_ast)),
+            "group_by": bool(self._group_by_exprs(ref_ast)),
+            "having": bool(self._clause_sql_set(ref_ast, exp.Having)),
+            "order_by": bool(self._order_by_exprs(ref_ast)),
+            "limit": self._limit_value(ref_ast) is not None,
+            "aggregates": bool(self._aggregate_signature(ref_ast)),
+            "subquery": self._subquery_count(ref_ast) > 0,
+            "operators": bool(self._operator_signature(ref_ast)),
+        }
+        dims = [
+            dimension
+            for dimension in all_dims
+            if dimension.name in {"select", "from"}
+            or optional_active.get(dimension.name, False)
+        ]
+        return SQLComparisonResult(
+            dimensions=dims,
+            warnings=warnings,
+            force_review=False,
+            reference_type=ref_type,
+            student_type=stu_type,
+            active_dimensions=[dimension.name for dimension in dims],
+        )
 
     def _parse(self, sql: str) -> tuple[Any | None, str | None]:
         if not sql:
             return None, "空 SQL"
         try:
-            return sqlglot.parse_one(sql), None
+            statements = [statement for statement in sqlglot.parse(sql) if statement is not None]
+            if len(statements) != 1:
+                return None, f"只允许单条 SQL，检测到 {len(statements)} 条语句"
+            return statements[0], None
         except ParseError as e:
             return None, str(e)
         except Exception as e:  # pragma: no cover
             return None, str(e)
+
+    @staticmethod
+    def _statement_type(ast: Any) -> str:
+        if exp is not None and isinstance(ast, exp.Select):
+            return "SELECT"
+        return type(ast).__name__.upper()
 
     def _score_select(self, ref, stu) -> DimensionScore:
         w = _DEFAULT_WEIGHTS["select"]
@@ -421,13 +487,14 @@ class SQLStructureScorer:
         if not stu:
             warnings.append("学生答案 SQL 为空")
 
-        dimensions, cmp_warnings, force_review = self.comparator.compare(ref, stu)
-        warnings.extend(cmp_warnings)
+        comparison = self.comparator.compare_detailed(ref, stu)
+        warnings.extend(comparison.warnings)
 
         score, confidence, matched, missed = self.mapper.map(
-            dimensions, request.max_score, precision
+            comparison.dimensions, request.max_score, precision
         )
 
+        force_review = comparison.force_review
         if force_review:
             confidence = min(confidence, 0.4)
         if not stu or not ref:
@@ -449,6 +516,10 @@ class SQLStructureScorer:
                 "parser": "sqlglot" if sqlglot is not None else None,
                 "normalized_reference": ref,
                 "normalized_student": stu,
+                "reference_statement_type": comparison.reference_type,
+                "student_statement_type": comparison.student_type,
+                "active_dimensions": comparison.active_dimensions,
+                "rejection_reason": comparison.rejection_reason,
             },
         )
 
@@ -458,6 +529,7 @@ class SQLStructureScorer:
 
 __all__ = [
     "SQLAstComparator",
+    "SQLComparisonResult",
     "SQLNormalizer",
     "SQLScoreMapper",
     "SQLStructureScorer",

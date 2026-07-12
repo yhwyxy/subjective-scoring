@@ -6,9 +6,9 @@
 
 ## 特性
 
-- **Text**：结构化评分点 × CrossEncoder/词法相似度 + 否定/数字等规则拦截
-- **SQL**：`sqlglot` AST 结构比较（不走模型）
-- **Code**：`tree-sitter` 结构分 + 语义分加权融合（默认 0.7 / 0.3）
+- **Text**：结构化评分点 × 校准后的 CrossEncoder/云端相关度 + 局部否定/数字规则
+- **SQL**：`sqlglot` AST 结构比较，单语句与顶层类型硬门槛（不走模型）
+- **Code**：`tree-sitter` 结构分 + 语义分加权融合；明确标记为静态估分
 - **统一契约**：置信度阈值、人工复核等级、证据点、可注入 scorer
 - **可降级**：无 GPU / 无模型时词法回退，单测不下载权重
 
@@ -122,6 +122,25 @@ service = SubjectiveScoringService(
 
 同名 `model_name` 在进程内只加载一份权重（`lru_cache`）。
 
+## 分数校准与诊断
+
+Reranker 返回的是排序相关度，并不直接等同于得分比例。文本评分会先按后端应用单调分段校准，再执行局部规则调整。内置配置区分本地 CrossEncoder、`cohere:*` 云端 Reranker 与 lexical/injected 后端。
+
+需要覆盖默认曲线时可注入校准器：
+
+```python
+from subjective_scoring import PiecewiseLinearCalibrator, SubjectiveScoringService
+
+service = SubjectiveScoringService(
+    text_calibrator=PiecewiseLinearCalibrator(
+        [(0.0, 0.0), (0.2, 0.6), (0.5, 0.9), (1.0, 1.0)],
+        name="custom-v1",
+    ),
+)
+```
+
+启用 trace 后，文本中间结果的 `metadata.point_diagnostics` 会记录每个评分点的原始相关度、校准覆盖度、规则命中证据和调整后置信度。
+
 ## 云端 Reranker
 
 无法下载或运行本地 CrossEncoder 时，可以注入兼容 Cohere `/rerank` 协议的云端服务。URL、API Key 和模型 ID 应由应用环境提供，不要写入库源码或提交到 Git。
@@ -192,11 +211,13 @@ from subjective_scoring import (
 
 高级组件：`TextRerankerScorer`、`SQLStructureScorer`、`CodeHybridScorer`、`InputNormalizerComponent`、`QuestionTypeRouter`、`ScoreAggregatorComponent`。
 
+限制：第一阶段不会执行学生代码或 SQL。代码结果的中间元数据包含 `assessment_type=static_estimate`；无法静态验证的行为评分点会要求后续执行测试或人工复核。SQL 第一阶段只自动比较单条 `SELECT`，DML、DDL、多语句和解析失败答案为 0 分并要求复核。
+
 ## 测试
 
 ```bash
-uv sync --extra text --extra sql --extra code --extra dev
-uv run pytest -q
+UV_CACHE_DIR=/private/tmp/uv-cache-subjective uv sync --extra dev
+UV_CACHE_DIR=/private/tmp/uv-cache-subjective uv run --extra dev pytest -q
 ```
 
 默认测试 **不下载** CrossEncoder 权重（`allow_model_load=False` 或注入 scorer）。

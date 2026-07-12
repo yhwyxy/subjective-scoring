@@ -6,6 +6,10 @@ import re
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 
+from subjective_scoring.engines.calibration import (
+    ScoreCalibrator,
+    default_calibrator_for_backend,
+)
 from subjective_scoring.engines._similarity import (
     PairScorer,
     SimilarityFn,
@@ -52,6 +56,15 @@ _ANTONYM_PAIRS = (
     ("开启", "关闭"),
     ("允许", "禁止"),
 )
+_CLAUSE_RE = re.compile(r"[。！？!?；;，,\n]+")
+_STOPWORDS = set(tokenize("的 了 和 与 或 是 在 为 等 及 使用 通过 可以 应该 保持"))
+_DEFAULT_POLARITY_RULES = (
+    (
+        "stateless",
+        r"(无状态|不保存.{0,10}(会话|客户端状态)|不依赖.{0,10}(历史|上下文|会话))",
+        r"(有状态|保存.{0,8}(客户端)?会话状态|依赖.{0,8}(历史|上下文|会话))",
+    ),
+)
 
 
 @dataclass
@@ -68,7 +81,9 @@ class RuleHit:
     point_id: str
     kind: str
     message: str
-    severity: str = "hard"  # hard -> zero score + force review; soft -> penalize
+    severity: str = "hard"
+    evidence: str | None = None
+    confidence: float = 1.0
 
 
 @dataclass
@@ -129,18 +144,33 @@ class ScoringPointResolver:
 class RuleInterceptor:
     """轻量规则拦截：否定、数字、单位、方向、反义。"""
 
+    def __init__(
+        self,
+        polarity_rules: Sequence[tuple[str, str, str]] | None = None,
+    ) -> None:
+        rules = [*_DEFAULT_POLARITY_RULES, *(polarity_rules or ())]
+        self.polarity_rules = [
+            (name, re.compile(positive, re.IGNORECASE), re.compile(negative, re.IGNORECASE))
+            for name, positive, negative in rules
+        ]
+
     def check(self, point_text: str, student_answer: str, point_id: str) -> RuleInterceptResult:
         hits: list[RuleHit] = []
         pt = point_text or ""
         sa = student_answer or ""
 
-        if self._negation_conflict(pt, sa):
+        negation_conflict, negation_evidence, negation_confidence = (
+            self._negation_conflict(pt, sa)
+        )
+        if negation_conflict:
             hits.append(
                 RuleHit(
                     point_id=point_id,
                     kind="negation",
                     message=f"否定词冲突：评分点与学生答案极性相反（{point_id}）",
                     severity="hard",
+                    evidence=negation_evidence,
+                    confidence=negation_confidence,
                 )
             )
 
@@ -190,16 +220,54 @@ class RuleInterceptor:
     def _has_negation(text: str) -> bool:
         return bool(_NEGATION_RE.search(text or ""))
 
-    def _negation_conflict(self, point: str, student: str) -> bool:
-        # 仅当评分点与学生答案在共享内容词上极性相反时触发
-        pt_tokens = set(tokenize(point))
-        sa_tokens = set(tokenize(student))
-        content = (pt_tokens & sa_tokens) - set(tokenize("的 了 和 与 或 是 在 为 等 及"))
-        if len(content) < 1:
-            return False
-        return self._has_negation(point) != self._has_negation(student) and (
-            self._has_negation(point) or self._has_negation(student)
-        )
+    def _negation_conflict(self, point: str, student: str) -> tuple[bool, str | None, float]:
+        """只在与评分点局部相关的语句中判断极性。"""
+
+        point_polarity = self._concept_polarity(point)
+        point_tokens = self._content_tokens(point)
+        candidates: list[tuple[int, str]] = []
+        for clause in _CLAUSE_RE.split(student or ""):
+            clause = clause.strip()
+            if not clause:
+                continue
+            overlap = len(point_tokens & self._content_tokens(clause))
+            if overlap:
+                candidates.append((overlap, clause))
+
+        if not candidates:
+            return False, None, 0.0
+
+        for overlap, clause in sorted(candidates, reverse=True):
+            clause_polarity = self._concept_polarity(clause)
+            if point_polarity and clause_polarity and point_polarity[0] == clause_polarity[0]:
+                if point_polarity[1] != clause_polarity[1]:
+                    return True, clause, 1.0
+                continue
+
+            point_negated = self._has_negation(point)
+            clause_negated = self._has_negation(clause)
+            if point_negated == clause_negated:
+                continue
+            # 单个宽泛 token 容易把别处的否定词错误关联到评分点。
+            if overlap >= 2 or any(
+                len(token) >= 4 and token in clause for token in point_tokens
+            ):
+                confidence = min(1.0, 0.55 + overlap * 0.15)
+                return True, clause, confidence
+        return False, None, 0.0
+
+    @staticmethod
+    def _content_tokens(text: str) -> set[str]:
+        return {token for token in tokenize(text or "") if token not in _STOPWORDS}
+
+    def _concept_polarity(self, text: str) -> tuple[str, int] | None:
+        value = text or ""
+        for name, positive, negative in self.polarity_rules:
+            if positive.search(value):
+                return name, 1
+            if negative.search(value):
+                return name, -1
+        return None
 
     @staticmethod
     def _extract_numbers(text: str) -> set[str]:
@@ -264,6 +332,7 @@ class TextRerankerScorer:
         model_name: str = "BAAI/bge-reranker-base",
         point_resolver: ScoringPointResolver | None = None,
         rule_interceptor: RuleInterceptor | None = None,
+        calibrator: ScoreCalibrator | None = None,
     ) -> None:
         self._injected = pair_scorer
         self.match_threshold = match_threshold
@@ -271,6 +340,7 @@ class TextRerankerScorer:
         self.model_name = model_name
         self.point_resolver = point_resolver or ScoringPointResolver()
         self.rule_interceptor = rule_interceptor or RuleInterceptor()
+        self.calibrator = calibrator
 
     def score(self, request: ScoringRequest) -> IntermediateScoreResult:
         points, warnings, force_review = self.point_resolver.resolve(request)
@@ -299,6 +369,7 @@ class TextRerankerScorer:
 
         pairs = [(student, p.text) for p in points]
         similarities = scorer.score_pairs(pairs) if student else [0.0] * len(points)
+        calibrator = self.calibrator or default_calibrator_for_backend(backend_name)
 
         matched: list[EvidenceItem] = []
         missed: list[EvidenceItem] = []
@@ -306,12 +377,14 @@ class TextRerankerScorer:
         weighted_conf = 0.0
         weight_sum = 0.0
         hard_conflict = False
+        point_diagnostics: list[dict[str, object]] = []
 
-        for point, sim in zip(points, similarities):
-            sim = float(max(0.0, min(1.0, sim)))
+        for point, raw_sim in zip(points, similarities):
+            raw_sim = float(max(0.0, min(1.0, raw_sim)))
+            sim = float(max(0.0, min(1.0, calibrator.calibrate(raw_sim))))
             rule = self.rule_interceptor.check(point.text, student, point.id)
             point_score = sim * point.score
-            reason_parts = [f"语义相似度 {sim:.2f}"]
+            reason_parts = [f"原始相关度 {raw_sim:.2f}", f"校准覆盖度 {sim:.2f}"]
 
             if rule.hits:
                 for hit in rule.hits:
@@ -319,11 +392,31 @@ class TextRerankerScorer:
                     reason_parts.append(hit.message)
                 if rule.hard_hits:
                     hard_conflict = True
-                    point_score = 0.0
-                    sim = min(sim, 0.2)
+                    point_score *= 0.35
+                    sim = min(sim, 0.45)
                 else:
-                    point_score *= 0.5
-                    sim *= 0.7
+                    point_score *= 0.65
+                    sim *= 0.8
+
+            point_diagnostics.append(
+                {
+                    "point_id": point.id,
+                    "raw_similarity": round(raw_sim, 4),
+                    "calibrated_similarity": round(
+                        calibrator.calibrate(raw_sim), 4
+                    ),
+                    "adjusted_confidence": round(sim, 4),
+                    "rule_hits": [
+                        {
+                            "kind": hit.kind,
+                            "severity": hit.severity,
+                            "confidence": round(hit.confidence, 4),
+                            "evidence": hit.evidence,
+                        }
+                        for hit in rule.hits
+                    ],
+                }
+            )
 
             point_score = round(min(point_score, point.score), precision)
             total += point_score
@@ -385,6 +478,8 @@ class TextRerankerScorer:
                 "parser": None,
                 "match_threshold": self.match_threshold,
                 "point_count": len(points),
+                "calibrator": getattr(calibrator, "name", type(calibrator).__name__),
+                "point_diagnostics": point_diagnostics,
             },
         )
 
@@ -416,6 +511,7 @@ class TextRerankerScorer:
 
 __all__ = [
     "RuleInterceptor",
+    "ScoreCalibrator",
     "ScoringPointResolver",
     "TextRerankerScorer",
 ]
