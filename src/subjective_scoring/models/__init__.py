@@ -8,12 +8,16 @@ from .schemas import (
     ManualReviewThresholds,
     MatchedPoint,
     MissedPoint,
+    PointConflictPolicy,
+    PointRelation,
     ReviewLevel,
+    ScoringDecision,
     ScoringMode,
     ScoringOptions,
     ScoringPoint,
     ScoringRequest,
     ScoringResult,
+    TextRelationThresholds,
 )
 
 __all__ = [
@@ -24,10 +28,14 @@ __all__ = [
     "ManualReviewThresholds",
     "MatchedPoint",
     "MissedPoint",
+    "PointConflictPolicy",
+    "PointRelation",
     "ReviewLevel",
+    "ScoringDecision",
     "ScoringMode",
     "ScoringOptions",
     "ScoringPoint",
     "ScoringRequest",
     "ScoringResult",
+    "TextRelationThresholds",
 ]

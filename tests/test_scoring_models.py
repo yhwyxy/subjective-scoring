@@ -11,12 +11,15 @@ from subjective_scoring import (
     ManualReviewThresholds,
     MatchedPoint,
     MissedPoint,
+    PointConflictPolicy,
+    PointRelation,
     ReviewLevel,
     ScoringMode,
     ScoringOptions,
     ScoringPoint,
     ScoringRequest,
     ScoringResult,
+    TextRelationThresholds,
 )
 
 
@@ -54,6 +57,7 @@ class TestScoringRequest:
         assert req.max_score == 10
         assert len(req.scoring_points) == 2
         assert req.scoring_points[0].required is True
+        assert req.scoring_points[0].conflict_policy is PointConflictPolicy.POINT_ZERO
         assert req.scoring_config.allow_auto_scoring_point_generation is False
         assert req.scoring_config.manual_review_thresholds.auto_pass == 0.85
         assert req.scoring_config.code_score_weights.semantic == 0.7
@@ -90,6 +94,17 @@ class TestScoringRequest:
                 )
             )
 
+    def test_atomic_scoring_point_ids_must_be_unique(self):
+        with pytest.raises(ValidationError, match="必须唯一"):
+            ScoringRequest.model_validate(
+                _sample_request_payload(
+                    scoring_points=[
+                        {"id": "same", "text": "a", "score": 3},
+                        {"id": "same", "text": "b", "score": 3},
+                    ]
+                )
+            )
+
     def test_rejects_negative_max_score(self):
         with pytest.raises(ValidationError):
             ScoringRequest(question_id="q1", max_score=-1)
@@ -115,6 +130,12 @@ class TestScoringOptions:
         assert opts.manual_review_thresholds.auto_pass == 0.85
         assert opts.code_score_weights.structure == 0.3
         assert opts.score_precision == 1
+        assert opts.text_relation_thresholds.support == 0.55
+        assert opts.text_relation_thresholds.reject_when_no_supported is True
+
+    def test_text_relation_thresholds_are_bounded(self):
+        with pytest.raises(ValidationError):
+            TextRelationThresholds(support=1.1)
 
 
 class TestIntermediateScoreResult:
@@ -133,6 +154,8 @@ class TestIntermediateScoreResult:
                     "evidence": "查得更快",
                     "reason": "命中评分点：提高查询效率",
                     "similarity": 0.92,
+                    "relation": "supported",
+                    "relation_confidence": 0.92,
                 }
             ],
             missed_evidence=[
@@ -149,6 +172,7 @@ class TestIntermediateScoreResult:
         assert mid.score == 8.5
         assert mid.force_manual_review is False
         assert len(mid.matched_evidence) == 1
+        assert mid.matched_evidence[0].relation is PointRelation.SUPPORTED
         assert mid.metadata["model"] == "BAAI/bge-reranker-base"
 
     def test_score_cannot_exceed_max(self):

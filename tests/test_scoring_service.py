@@ -5,6 +5,7 @@ from __future__ import annotations
 from subjective_scoring import (
     IntermediateScoreResult,
     ReviewLevel,
+    ScoringDecision,
     ScoringMode,
     ScoringRequest,
     ScoringResult,
@@ -103,6 +104,8 @@ def test_text_pipeline_end_to_end():
     assert result.confidence == 0.9
     assert result.need_manual_review is False
     assert result.review_level is ReviewLevel.AUTO_PASS
+    assert result.decision is ScoringDecision.AUTO_SCORE
+    assert result.decision_reason == "supported_points"
     assert result.matched_points[0].point_id == "p1"
     # normalizer should have been applied (punctuation etc.) before engine
     assert len(svc._test_text.calls) == 1  # type: ignore[attr-defined]

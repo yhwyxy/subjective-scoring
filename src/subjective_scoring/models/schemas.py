@@ -38,6 +38,30 @@ class ReviewLevel(str, Enum):
     MANUAL_REQUIRED = "manual_required"
 
 
+class PointRelation(str, Enum):
+    """学生答案证据与原子评分点之间的语义关系。"""
+
+    SUPPORTED = "supported"
+    CONTRADICTED = "contradicted"
+    UNKNOWN = "unknown"
+
+
+class PointConflictPolicy(str, Enum):
+    """评分点发生高置信硬冲突时的整题处理策略。"""
+
+    POINT_ZERO = "point_zero"
+    CAP_TOTAL = "cap_total"
+    ZERO_TOTAL = "zero_total"
+
+
+class ScoringDecision(str, Enum):
+    """自动评分器对当前答案作出的最终决策。"""
+
+    AUTO_SCORE = "auto_score"
+    AUTO_ZERO = "auto_zero"
+    MANUAL_REVIEW = "manual_review"
+
+
 # 复核等级严重程度：数值越大越严格，供 Aggregator 取最严结果。
 REVIEW_LEVEL_RANK: dict[ReviewLevel, int] = {
     ReviewLevel.AUTO_PASS: 0,
@@ -52,7 +76,7 @@ REVIEW_LEVEL_RANK: dict[ReviewLevel, int] = {
 
 
 class ScoringPoint(BaseModel):
-    """人工配置的结构化评分点（文本题第一版推荐必配）。"""
+    """人工配置的原子评分点；每项应描述一个可独立验证的结论。"""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -60,6 +84,20 @@ class ScoringPoint(BaseModel):
     text: str = Field(..., min_length=1, description="评分点描述文本")
     score: float = Field(..., ge=0, description="该评分点满分")
     required: bool = Field(default=False, description="是否为必答知识点")
+    critical: bool = Field(
+        default=False,
+        description="是否为关键结论；不确定或冲突时必须人工复核",
+    )
+    conflict_policy: PointConflictPolicy = Field(
+        default=PointConflictPolicy.POINT_ZERO,
+        description="高置信硬冲突时仅该点归零、整题封顶或整题归零",
+    )
+    conflict_score_cap_ratio: float = Field(
+        default=0.4,
+        ge=0.0,
+        le=1.0,
+        description="conflict_policy=cap_total 时的整题最高得分比例",
+    )
 
 
 class ManualReviewThresholds(BaseModel):
@@ -85,6 +123,37 @@ class ManualReviewThresholds(BaseModel):
         if self.review > self.auto_pass:
             raise ValueError("manual_review_thresholds.review 不得大于 auto_pass")
         return self
+
+
+class TextRelationThresholds(BaseModel):
+    """文本原子评分点的支持、冲突与拒判阈值。"""
+
+    model_config = ConfigDict(extra="forbid")
+
+    support: float = Field(
+        default=0.55,
+        ge=0.0,
+        le=1.0,
+        description="校准相似度达到该值时，评分点可判定为 supported",
+    )
+    conflict: float = Field(
+        default=0.8,
+        ge=0.0,
+        le=1.0,
+        description="硬冲突规则达到该置信度时，评分点判定为 contradicted",
+    )
+    reject_when_no_supported: bool = Field(
+        default=True,
+        description="无 supported 点但存在 unknown 点时拒绝自动定分并要求人工复核",
+    )
+    required_unknown_requires_review: bool = Field(
+        default=True,
+        description="required 或 critical 评分点为 unknown 时要求人工复核",
+    )
+    apply_gate_to_synthetic_reference: bool = Field(
+        default=False,
+        description="是否对未拆分的全文标准答案兜底点应用原子评分门槛",
+    )
 
 
 class CodeScoreWeights(BaseModel):
@@ -115,6 +184,9 @@ class ScoringOptions(BaseModel):
 
     manual_review_thresholds: ManualReviewThresholds = Field(
         default_factory=ManualReviewThresholds,
+    )
+    text_relation_thresholds: TextRelationThresholds = Field(
+        default_factory=TextRelationThresholds,
     )
     code_score_weights: CodeScoreWeights = Field(
         default_factory=CodeScoreWeights,
@@ -184,6 +256,9 @@ class ScoringRequest(BaseModel):
     def _check_scoring_points_total(self) -> ScoringRequest:
         if not self.scoring_points:
             return self
+        point_ids = [point.id for point in self.scoring_points]
+        if len(point_ids) != len(set(point_ids)):
+            raise ValueError("scoring_points.id 必须唯一，才能独立追踪原子评分点")
         total = sum(p.score for p in self.scoring_points)
         # 允许评分点合计略小于满分（部分选答点），但禁止明显超分
         if total > self.max_score + 1e-6:
@@ -216,6 +291,16 @@ class EvidenceItem(BaseModel):
         ge=0.0,
         le=1.0,
         description="语义 / 结构相似度，可选",
+    )
+    relation: PointRelation | None = Field(
+        default=None,
+        description="文本评分点关系：supported / contradicted / unknown",
+    )
+    relation_confidence: float | None = Field(
+        default=None,
+        ge=0.0,
+        le=1.0,
+        description="关系判定置信度",
     )
 
 
@@ -269,6 +354,8 @@ class MatchedPoint(BaseModel):
     similarity: float | None = Field(default=None, ge=0.0, le=1.0)
     evidence: str | None = None
     reason: str | None = None
+    relation: PointRelation | None = None
+    relation_confidence: float | None = Field(default=None, ge=0.0, le=1.0)
 
 
 class MissedPoint(BaseModel):
@@ -280,6 +367,10 @@ class MissedPoint(BaseModel):
     score: float = Field(default=0.0, ge=0)
     max_score: float = Field(..., ge=0)
     reason: str | None = None
+    similarity: float | None = Field(default=None, ge=0.0, le=1.0)
+    evidence: str | None = None
+    relation: PointRelation | None = None
+    relation_confidence: float | None = Field(default=None, ge=0.0, le=1.0)
 
 
 class ScoringResult(BaseModel):
@@ -305,6 +396,14 @@ class ScoringResult(BaseModel):
     matched_points: list[MatchedPoint] = Field(default_factory=list)
     missed_points: list[MissedPoint] = Field(default_factory=list)
     warnings: list[str] = Field(default_factory=list)
+    decision: ScoringDecision | None = Field(
+        default=None,
+        description="自动给分、自动归零或拒绝自动定分并转人工复核",
+    )
+    decision_reason: str | None = Field(
+        default=None,
+        description="触发当前决策的稳定原因码",
+    )
 
     @model_validator(mode="after")
     def _check_consistency(self) -> ScoringResult:

@@ -10,6 +10,7 @@ from subjective_scoring.models import (
     MissedPoint,
     REVIEW_LEVEL_RANK,
     ReviewLevel,
+    ScoringDecision,
     ScoringMode,
     ScoringRequest,
     ScoringResult,
@@ -78,6 +79,20 @@ class ScoreAggregatorComponent:
             ),
             self._review_level_from_engines(results),
         )
+        decision_reasons = [
+            str(result.metadata["decision_reason"])
+            for result in results
+            if result.metadata.get("decision_reason")
+        ]
+        if review_level != ReviewLevel.AUTO_PASS:
+            decision = ScoringDecision.MANUAL_REVIEW
+            decision_reason = decision_reasons[0] if decision_reasons else "review_required"
+        elif score <= _SCORE_EPS:
+            decision = ScoringDecision.AUTO_ZERO
+            decision_reason = decision_reasons[0] if decision_reasons else "zero_score"
+        else:
+            decision = ScoringDecision.AUTO_SCORE
+            decision_reason = decision_reasons[0] if decision_reasons else "supported_points"
 
         return ScoringResult(
             question_id=request.question_id,
@@ -91,6 +106,8 @@ class ScoreAggregatorComponent:
             matched_points=matched_points,
             missed_points=missed_points,
             warnings=warnings,
+            decision=decision,
+            decision_reason=decision_reason,
         )
 
     def __call__(
@@ -203,6 +220,8 @@ class ScoreAggregatorComponent:
                         similarity=evidence.similarity,
                         evidence=evidence.evidence,
                         reason=evidence.reason,
+                        relation=evidence.relation,
+                        relation_confidence=evidence.relation_confidence,
                     )
                 )
 
@@ -220,6 +239,10 @@ class ScoreAggregatorComponent:
                         score=evidence.score,
                         max_score=evidence.max_score,
                         reason=evidence.reason,
+                        similarity=evidence.similarity,
+                        evidence=evidence.evidence,
+                        relation=evidence.relation,
+                        relation_confidence=evidence.relation_confidence,
                     )
                 )
 

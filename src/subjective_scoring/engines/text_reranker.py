@@ -20,6 +20,8 @@ from subjective_scoring.engines._similarity import (
 from subjective_scoring.models import (
     EvidenceItem,
     IntermediateScoreResult,
+    PointConflictPolicy,
+    PointRelation,
     ScoringMode,
     ScoringPoint,
     ScoringRequest,
@@ -73,6 +75,9 @@ class ResolvedScoringPoint:
     text: str
     score: float
     required: bool = False
+    critical: bool = False
+    conflict_policy: PointConflictPolicy = PointConflictPolicy.POINT_ZERO
+    conflict_score_cap_ratio: float = 0.4
     synthetic: bool = False
 
 
@@ -109,6 +114,9 @@ class ScoringPointResolver:
                     text=p.text,
                     score=float(p.score),
                     required=p.required,
+                    critical=p.critical,
+                    conflict_policy=p.conflict_policy,
+                    conflict_score_cap_ratio=p.conflict_score_cap_ratio,
                 )
                 for p in request.scoring_points
             ]
@@ -314,7 +322,7 @@ class TextRerankerScorer:
     pair_scorer:
         可注入的成对打分器或 (query, doc) -> float，便于测试。
     match_threshold:
-        similarity >= threshold 记为 matched_evidence。
+        可选的支持阈值覆盖；未传入时使用请求中的 text_relation_thresholds.support。
     allow_model_load:
         False 时不尝试加载 BGE/CrossEncoder（单元测试默认）。
     model_name:
@@ -327,7 +335,7 @@ class TextRerankerScorer:
         self,
         *,
         pair_scorer: PairScorer | SimilarityFn | None = None,
-        match_threshold: float = _DEFAULT_MATCH_THRESHOLD,
+        match_threshold: float | None = None,
         allow_model_load: bool = True,
         model_name: str = "BAAI/bge-reranker-base",
         point_resolver: ScoringPointResolver | None = None,
@@ -346,6 +354,13 @@ class TextRerankerScorer:
         points, warnings, force_review = self.point_resolver.resolve(request)
         student = (request.student_answer or "").strip()
         precision = request.scoring_config.score_precision
+        relation_options = request.scoring_config.text_relation_thresholds
+        support_threshold = (
+            self.match_threshold
+            if self.match_threshold is not None
+            else relation_options.support
+        )
+        conflict_threshold = relation_options.conflict
 
         if not points:
             return IntermediateScoreResult(
@@ -377,35 +392,93 @@ class TextRerankerScorer:
         weighted_conf = 0.0
         weight_sum = 0.0
         hard_conflict = False
+        supported_count = 0
+        contradicted_count = 0
+        unknown_count = 0
+        required_unknown = False
+        total_conflict_zero = False
+        total_conflict_cap_ratio = 1.0
+        applied_caps: list[str] = []
+        decision_reason: str | None = None
         point_diagnostics: list[dict[str, object]] = []
 
         for point, raw_sim in zip(points, similarities):
             raw_sim = float(max(0.0, min(1.0, raw_sim)))
-            sim = float(max(0.0, min(1.0, calibrator.calibrate(raw_sim))))
+            calibrated_sim = float(
+                max(0.0, min(1.0, calibrator.calibrate(raw_sim)))
+            )
             rule = self.rule_interceptor.check(point.text, student, point.id)
-            point_score = sim * point.score
-            reason_parts = [f"原始相关度 {raw_sim:.2f}", f"校准覆盖度 {sim:.2f}"]
+            confident_hard_hits = [
+                hit for hit in rule.hard_hits if hit.confidence >= conflict_threshold
+            ]
+            uncertain_hard_hits = [
+                hit for hit in rule.hard_hits if hit.confidence < conflict_threshold
+            ]
+
+            if confident_hard_hits:
+                relation = PointRelation.CONTRADICTED
+                relation_confidence = max(hit.confidence for hit in confident_hard_hits)
+            elif uncertain_hard_hits:
+                relation = PointRelation.UNKNOWN
+                relation_confidence = max(hit.confidence for hit in uncertain_hard_hits)
+            elif calibrated_sim >= support_threshold:
+                relation = PointRelation.SUPPORTED
+                relation_confidence = calibrated_sim
+            else:
+                relation = PointRelation.UNKNOWN
+                relation_confidence = max(0.0, 1.0 - calibrated_sim)
+
+            point_score = 0.0
+            adjusted_confidence = relation_confidence
+            reason_parts = [
+                f"原始相关度 {raw_sim:.2f}",
+                f"校准覆盖度 {calibrated_sim:.2f}",
+                f"关系 {relation.value}",
+            ]
 
             if rule.hits:
                 for hit in rule.hits:
                     warnings.append(hit.message)
                     reason_parts.append(hit.message)
-                if rule.hard_hits:
-                    hard_conflict = True
-                    point_score *= 0.35
-                    sim = min(sim, 0.45)
-                else:
+
+            if relation == PointRelation.SUPPORTED:
+                supported_count += 1
+                point_score = calibrated_sim * point.score
+                soft_hits = [hit for hit in rule.hits if hit.severity != "hard"]
+                if soft_hits:
                     point_score *= 0.65
-                    sim *= 0.8
+                    adjusted_confidence = calibrated_sim * 0.8
+            elif relation == PointRelation.CONTRADICTED:
+                contradicted_count += 1
+                hard_conflict = True
+                force_review = True
+                adjusted_confidence = min(relation_confidence, 0.4)
+                if point.conflict_policy == PointConflictPolicy.ZERO_TOTAL:
+                    total_conflict_zero = True
+                elif point.conflict_policy == PointConflictPolicy.CAP_TOTAL:
+                    total_conflict_cap_ratio = min(
+                        total_conflict_cap_ratio,
+                        point.conflict_score_cap_ratio,
+                    )
+            else:
+                unknown_count += 1
+                if point.required or point.critical:
+                    required_unknown = True
+                # 未拆分全文仅用于兼容兜底估分，始终要求人工复核。
+                if point.synthetic and not relation_options.apply_gate_to_synthetic_reference:
+                    point_score = calibrated_sim * point.score
+                    force_review = True
+                    reason_parts.append("全文兜底点未应用原子评分门槛，仅作待复核估分")
 
             point_diagnostics.append(
                 {
                     "point_id": point.id,
                     "raw_similarity": round(raw_sim, 4),
-                    "calibrated_similarity": round(
-                        calibrator.calibrate(raw_sim), 4
-                    ),
-                    "adjusted_confidence": round(sim, 4),
+                    "calibrated_similarity": round(calibrated_sim, 4),
+                    "adjusted_confidence": round(adjusted_confidence, 4),
+                    "relation": relation.value,
+                    "relation_confidence": round(relation_confidence, 4),
+                    "synthetic": point.synthetic,
                     "rule_hits": [
                         {
                             "kind": hit.kind,
@@ -420,7 +493,7 @@ class TextRerankerScorer:
 
             point_score = round(min(point_score, point.score), precision)
             total += point_score
-            weighted_conf += sim * point.score
+            weighted_conf += relation_confidence * point.score
             weight_sum += point.score
 
             evidence = EvidenceItem(
@@ -429,9 +502,11 @@ class TextRerankerScorer:
                 max_score=point.score,
                 evidence=self._snippet(student, point.text) if point_score > 0 else None,
                 reason="；".join(reason_parts),
-                similarity=round(sim, 4),
+                similarity=round(calibrated_sim, 4),
+                relation=relation,
+                relation_confidence=round(relation_confidence, 4),
             )
-            if point_score > 0 and sim >= self.match_threshold and not rule.hard_hits:
+            if relation == PointRelation.SUPPORTED:
                 matched.append(evidence)
             else:
                 missed.append(
@@ -442,7 +517,10 @@ class TextRerankerScorer:
                         reason=evidence.reason
                         if rule.hits
                         else f"未充分覆盖评分点：{point.text}",
-                        similarity=round(sim, 4),
+                        similarity=round(calibrated_sim, 4),
+                        evidence=self._snippet(student, point.text),
+                        relation=relation,
+                        relation_confidence=round(relation_confidence, 4),
                     )
                 )
 
@@ -454,14 +532,53 @@ class TextRerankerScorer:
             mapped = total
         final_score = round(min(max(mapped, 0.0), request.max_score), precision)
 
+        if total_conflict_zero:
+            final_score = 0.0
+            applied_caps.append("critical_conflict:0.0")
+            decision_reason = "critical_point_conflict_zero_total"
+        elif total_conflict_cap_ratio < 1.0:
+            cap = round(request.max_score * total_conflict_cap_ratio, precision)
+            final_score = min(final_score, cap)
+            applied_caps.append(f"critical_conflict:{total_conflict_cap_ratio}")
+            decision_reason = "critical_point_conflict_cap"
+
         confidence = weighted_conf / weight_sum if weight_sum else 0.0
         if hard_conflict:
             confidence = min(confidence, 0.4)
             force_review = True
+            decision_reason = decision_reason or "hard_conflict"
+        if required_unknown and relation_options.required_unknown_requires_review:
+            force_review = True
+            confidence = min(confidence, 0.55)
+            warnings.append("必答或关键评分点关系不确定，拒绝自动定分")
+            decision_reason = decision_reason or "required_point_unknown"
+        if (
+            supported_count == 0
+            and unknown_count > 0
+            and relation_options.reject_when_no_supported
+            and any(not point.synthetic for point in points)
+        ):
+            final_score = 0.0
+            force_review = True
+            confidence = min(confidence, 0.55)
+            warnings.append("没有评分点被可靠支持，存在不确定关系，拒绝自动定分")
+            decision_reason = decision_reason or "no_supported_points_uncertain"
+        elif supported_count == 0 and contradicted_count == len(points):
+            final_score = 0.0
+            force_review = True
+            decision_reason = decision_reason or "all_points_contradicted"
         if not student:
+            final_score = 0.0
             confidence = 0.0
             force_review = True
             warnings.append("学生答案为空")
+            decision_reason = "empty_answer"
+
+        if decision_reason is None:
+            if final_score <= 0.0:
+                decision_reason = "no_supported_points"
+            else:
+                decision_reason = "supported_points"
 
         return IntermediateScoreResult(
             scorer=self.name,
@@ -472,12 +589,28 @@ class TextRerankerScorer:
             matched_evidence=matched,
             missed_evidence=missed,
             warnings=warnings,
-            force_manual_review=force_review or hard_conflict,
+            force_manual_review=force_review,
             metadata={
                 "model": backend_name,
                 "parser": None,
-                "match_threshold": self.match_threshold,
+                "match_threshold": support_threshold,
+                "support_threshold": support_threshold,
+                "conflict_threshold": conflict_threshold,
                 "point_count": len(points),
+                "relation_counts": {
+                    "supported": supported_count,
+                    "contradicted": contradicted_count,
+                    "unknown": unknown_count,
+                },
+                "decision": (
+                    "manual_review"
+                    if force_review
+                    else "auto_zero"
+                    if final_score <= 0.0
+                    else "auto_score"
+                ),
+                "decision_reason": decision_reason,
+                "applied_caps": applied_caps,
                 "calibrator": getattr(calibrator, "name", type(calibrator).__name__),
                 "point_diagnostics": point_diagnostics,
             },

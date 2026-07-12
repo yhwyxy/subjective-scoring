@@ -6,7 +6,7 @@
 
 ## 特性
 
-- **Text**：结构化评分点 × 校准后的 CrossEncoder/云端相关度 + 局部否定/数字规则
+- **Text**：原子评分点 × 三态关系（支持/冲突/不确定）+ 局部否定/数字规则 + 拒判复核
 - **SQL**：`sqlglot` AST 结构比较，单语句与顶层类型硬门槛（不走模型）
 - **Code**：`tree-sitter` 结构分 + 语义分加权融合；明确标记为静态估分
 - **统一契约**：置信度阈值、人工复核等级、证据点、可注入 scorer
@@ -59,11 +59,25 @@ result = service.score({
     "student_answer": "索引可以让数据库查得更快。",
     "scoring_points": [
         {"id": "p1", "text": "提高查询效率", "score": 5},
-        {"id": "p2", "text": "减少全表扫描", "score": 5},
+        {
+            "id": "p2",
+            "text": "减少全表扫描",
+            "score": 5,
+            "critical": True,
+            "conflict_policy": "cap_total",
+            "conflict_score_cap_ratio": 0.4,
+        },
     ],
+    "scoring_config": {
+        "text_relation_thresholds": {
+            "support": 0.55,
+            "conflict": 0.8,
+            "reject_when_no_supported": True,
+        }
+    },
 })
 
-print(result.score, result.confidence, result.review_level, result.track)
+print(result.score, result.decision, result.review_level, result.track)
 print(result.matched_points, result.missed_points)
 ```
 
@@ -122,6 +136,18 @@ service = SubjectiveScoringService(
 
 同名 `model_name` 在进程内只加载一份权重（`lru_cache`）。
 
+## 原子评分点、三态关系与拒判
+
+文本题会独立判定每个评分点与学生答案的关系：
+
+- `supported`：达到支持阈值且没有硬冲突，按校准覆盖度获得该点分数；
+- `contradicted`：高置信否定、方向或关键数字冲突，该点为 0 分并要求复核；
+- `unknown`：证据不足或冲突置信度不够，该点不计分。
+
+`required` 表示必答知识点，`critical` 表示关键结论。关键点可通过 `conflict_policy` 配置为 `point_zero`、`cap_total` 或 `zero_total`。如果没有任何评分点被可靠支持但仍存在 `unknown`，系统返回 `decision=manual_review`，不会把不确定判断当作确定的自动零分。
+
+评分点应保持原子化：一项只描述一个可独立验证的结论。例如 REST 的资源导向、HTTP 方法和无状态应拆成三个评分点，而不是合成一个复合评分点。
+
 ## 分数校准与诊断
 
 Reranker 返回的是排序相关度，并不直接等同于得分比例。文本评分会先按后端应用单调分段校准，再执行局部规则调整。内置配置区分本地 CrossEncoder、`cohere:*` 云端 Reranker 与 lexical/injected 后端。
@@ -139,7 +165,7 @@ service = SubjectiveScoringService(
 )
 ```
 
-启用 trace 后，文本中间结果的 `metadata.point_diagnostics` 会记录每个评分点的原始相关度、校准覆盖度、规则命中证据和调整后置信度。
+启用 trace 后，文本中间结果的 `metadata.point_diagnostics` 会记录每个评分点的原始相关度、校准覆盖度、三态关系、关系置信度、规则命中证据和调整后置信度。
 
 ## 云端 Reranker
 
