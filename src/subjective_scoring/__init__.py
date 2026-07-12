@@ -54,6 +54,12 @@ from .service import (
     SubjectiveScoringService,
     create_default_service,
 )
+from .rerankers import (
+    CohereRerankerPairScorer,
+    RemoteRerankerError,
+    RemoteRerankerRequestError,
+    RemoteRerankerResponseError,
+)
 
 __all__ = [
     "REVIEW_LEVEL_RANK",
@@ -69,6 +75,10 @@ __all__ = [
     "NormalizationResult",
     "PipelineTrace",
     "QuestionTypeRouter",
+    "CohereRerankerPairScorer",
+    "RemoteRerankerError",
+    "RemoteRerankerRequestError",
+    "RemoteRerankerResponseError",
     "ReviewLevel",
     "RouteDecision",
     "RuleInterceptor",

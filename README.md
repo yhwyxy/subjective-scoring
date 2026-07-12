@@ -24,6 +24,9 @@ pip install "subjective-scoring[text,sql,code]"
 # 启用语义 CrossEncoder（需 torch）
 pip install "subjective-scoring[text,sql,code,semantic]"
 
+# 云端 Cohere-compatible Reranker（无需本地模型权重）
+pip install "subjective-scoring[text,sql,code,remote]"
+
 # 全部
 pip install "subjective-scoring[all]"
 ```
@@ -119,6 +122,46 @@ service = SubjectiveScoringService(
 
 同名 `model_name` 在进程内只加载一份权重（`lru_cache`）。
 
+## 云端 Reranker
+
+无法下载或运行本地 CrossEncoder 时，可以注入兼容 Cohere `/rerank` 协议的云端服务。URL、API Key 和模型 ID 应由应用环境提供，不要写入库源码或提交到 Git。
+
+```python
+import os
+
+from subjective_scoring import (
+    CohereRerankerPairScorer,
+    SubjectiveScoringService,
+)
+
+reranker = CohereRerankerPairScorer(
+    url=os.environ["RERANK_API_URL"],
+    api_key=os.environ["RERANK_API_KEY"],
+    model=os.environ["RERANK_MODEL"],
+    timeout=30.0,
+)
+
+service = SubjectiveScoringService(
+    allow_model_load=False,
+    text_pair_scorer=reranker,
+    code_pair_scorer=reranker,
+)
+```
+
+适配器会把同一 query 的 documents 合并为一次请求，自动设置 `top_n`，并根据响应中的 `index` 恢复输入顺序。远端请求或响应失败时会抛出明确异常，由评分管线转为 0 分并要求人工复核，不会静默切换到词法相似度。
+
+请求结构：
+
+```json
+{
+  "model": "Pro/BAAI/bge-reranker-v2-m3",
+  "query": "student answer",
+  "documents": ["point one", "point two"],
+  "top_n": 2,
+  "return_documents": false
+}
+```
+
 ## 流水线
 
 ```text
@@ -177,8 +220,9 @@ result = service.score(req)
 | `sql` | sqlglot |
 | `code` | tree-sitter 语言包 |
 | `semantic` | sentence-transformers + torch |
+| `remote` | httpx + Cohere-compatible 云端 Reranker |
 | `all` | 以上全部 |
-| `dev` | pytest + text/sql/code |
+| `dev` | pytest + text/sql/code/remote |
 
 ## License
 

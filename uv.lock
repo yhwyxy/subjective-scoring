@@ -1052,7 +1052,7 @@ wheels = [
 
 [[package]]
 name = "subjective-scoring"
-version = "0.1.0"
+version = "0.1.1"
 source = { editable = "." }
 dependencies = [
     { name = "pydantic" },
@@ -1061,6 +1061,7 @@ dependencies = [
 [package.optional-dependencies]
 all = [
     { name = "ftfy" },
+    { name = "httpx" },
     { name = "sentence-transformers" },
     { name = "sqlglot" },
     { name = "torch" },
@@ -1079,6 +1080,7 @@ code = [
 ]
 dev = [
     { name = "ftfy" },
+    { name = "httpx" },
     { name = "pytest" },
     { name = "sqlglot" },
     { name = "tree-sitter" },
@@ -1086,6 +1088,9 @@ dev = [
     { name = "tree-sitter-java" },
     { name = "tree-sitter-javascript" },
     { name = "tree-sitter-python" },
+]
+remote = [
+    { name = "httpx" },
 ]
 semantic = [
     { name = "sentence-transformers" },
@@ -1101,12 +1106,13 @@ text = [
 [package.metadata]
 requires-dist = [
     { name = "ftfy", marker = "extra == 'text'", specifier = ">=6.3" },
+    { name = "httpx", marker = "extra == 'remote'", specifier = ">=0.27" },
     { name = "pydantic", specifier = ">=2.7" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.0" },
     { name = "sentence-transformers", marker = "extra == 'semantic'", specifier = ">=3.0" },
     { name = "sqlglot", marker = "extra == 'sql'", specifier = ">=30.0" },
-    { name = "subjective-scoring", extras = ["text", "sql", "code"], marker = "extra == 'dev'" },
-    { name = "subjective-scoring", extras = ["text", "sql", "code", "semantic"], marker = "extra == 'all'" },
+    { name = "subjective-scoring", extras = ["text", "sql", "code", "remote"], marker = "extra == 'dev'" },
+    { name = "subjective-scoring", extras = ["text", "sql", "code", "semantic", "remote"], marker = "extra == 'all'" },
     { name = "torch", marker = "extra == 'semantic'", specifier = ">=2.2" },
     { name = "tree-sitter", marker = "extra == 'code'", specifier = ">=0.25" },
     { name = "tree-sitter-cpp", marker = "extra == 'code'", specifier = ">=0.23" },
@@ -1114,7 +1120,7 @@ requires-dist = [
     { name = "tree-sitter-javascript", marker = "extra == 'code'", specifier = ">=0.23" },
     { name = "tree-sitter-python", marker = "extra == 'code'", specifier = ">=0.23" },
 ]
-provides-extras = ["text", "sql", "code", "semantic", "all", "dev"]
+provides-extras = ["text", "sql", "code", "semantic", "remote", "all", "dev"]
 
 [[package]]
 name = "sympy"

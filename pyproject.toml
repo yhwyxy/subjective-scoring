@@ -1,6 +1,6 @@
 [project]
 name = "subjective-scoring"
-version = "0.1.0"
+version = "0.1.1"
 description = "Multi-engine subjective answer scoring: text scoring-points, SQL AST, code hybrid (structure + semantic)."
 readme = "README.md"
 requires-python = ">=3.12"
@@ -50,12 +50,15 @@ semantic = [
     "sentence-transformers>=3.0",
     "torch>=2.2",
 ]
+remote = [
+    "httpx>=0.27",
+]
 all = [
-    "subjective-scoring[text,sql,code,semantic]",
+    "subjective-scoring[text,sql,code,semantic,remote]",
 ]
 dev = [
     "pytest>=8.0",
-    "subjective-scoring[text,sql,code]",
+    "subjective-scoring[text,sql,code,remote]",
 ]
 
 [project.urls]
