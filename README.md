@@ -77,7 +77,13 @@ result = service.score({
     },
 })
 
-print(result.score, result.decision, result.review_level, result.track)
+print(
+    result.score,
+    result.provisional_score,
+    result.decision,
+    result.review_level,
+    result.track,
+)
 print(result.matched_points, result.missed_points)
 ```
 
@@ -144,7 +150,11 @@ service = SubjectiveScoringService(
 - `contradicted`：高置信否定、方向或关键数字冲突，该点为 0 分并要求复核；
 - `unknown`：证据不足或冲突置信度不够，该点不计分。
 
-`required` 表示必答知识点，`critical` 表示关键结论。关键点可通过 `conflict_policy` 配置为 `point_zero`、`cap_total` 或 `zero_total`。如果没有任何评分点被可靠支持但仍存在 `unknown`，系统返回 `decision=manual_review`，不会把不确定判断当作确定的自动零分。
+评分前会先把答案拆成局部语句及相邻窗口，为每个原子评分点选择最相关证据；否定、数字和单位规则只检查该局部证据，避免答案其他段落中的“不”“没有”等词误伤当前评分点。
+
+`required` 表示必答知识点，`critical` 表示关键结论。关键点可通过 `conflict_policy` 配置为 `point_zero`、`cap_total` 或 `zero_total`。如果没有任何评分点被可靠支持但仍存在 `unknown`，系统返回 `decision=manual_review`；正式 `score` 不包含未知点，但 `provisional_score` 会保留待复核估分，调用方不得把它直接写入最终成绩。
+
+默认还会使用标准答案验证 required / critical 评分点。如果标准答案本身无法可靠支持评分点，结果会标记 `rubric_self_check_failed` 并进入人工复核。支持阈值按本地 CrossEncoder、云端 Reranker 和词法回退分别配置；显式设置 `support` 时仍可统一覆盖所有后端。
 
 评分点应保持原子化：一项只描述一个可独立验证的结论。例如 REST 的资源导向、HTTP 方法和无状态应拆成三个评分点，而不是合成一个复合评分点。
 

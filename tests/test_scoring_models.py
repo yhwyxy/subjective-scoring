@@ -144,12 +144,14 @@ class TestIntermediateScoreResult:
             scorer="TextRerankerScorer",
             scoring_mode=ScoringMode.TEXT,
             score=8.5,
+            provisional_score=9.0,
             max_score=10,
             confidence=0.9,
             matched_evidence=[
                 {
                     "point_id": "p1",
                     "score": 3,
+                    "provisional_score": 3,
                     "max_score": 3,
                     "evidence": "查得更快",
                     "reason": "命中评分点：提高查询效率",
@@ -170,6 +172,7 @@ class TestIntermediateScoreResult:
             force_manual_review=False,
         )
         assert mid.score == 8.5
+        assert mid.provisional_score == 9.0
         assert mid.force_manual_review is False
         assert len(mid.matched_evidence) == 1
         assert mid.matched_evidence[0].relation is PointRelation.SUPPORTED
@@ -191,6 +194,7 @@ class TestScoringResult:
         result = ScoringResult(
             question_id="q001",
             score=7.7,
+            provisional_score=8.0,
             max_score=10,
             scoring_mode=ScoringMode.TEXT,
             track="TextRerankerScorer",
@@ -218,6 +222,7 @@ class TestScoringResult:
             warnings=[],
         )
         assert result.review_level is ReviewLevel.AUTO_PASS
+        assert result.provisional_score == 8.0
         assert result.need_manual_review is False
         assert result.matched_points[0].similarity == 0.9
 

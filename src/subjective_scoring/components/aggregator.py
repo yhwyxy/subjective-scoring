@@ -67,6 +67,19 @@ class ScoreAggregatorComponent:
             )
         precision = request.scoring_config.score_precision
         score = round(capped, precision)
+        if any(result.provisional_score is not None for result in results):
+            raw_provisional = sum(
+                result.provisional_score
+                if result.provisional_score is not None
+                else result.score
+                for result in results
+            )
+            provisional_score = round(
+                min(max(raw_provisional, 0.0), request.max_score),
+                precision,
+            )
+        else:
+            provisional_score = None
 
         confidence = round(
             sum(result.confidence for result in results) / len(results),
@@ -97,6 +110,7 @@ class ScoreAggregatorComponent:
         return ScoringResult(
             question_id=request.question_id,
             score=score,
+            provisional_score=provisional_score,
             max_score=request.max_score,
             scoring_mode=scoring_mode,
             track=" + ".join(dict.fromkeys(result.scorer for result in results)),
@@ -216,6 +230,7 @@ class ScoreAggregatorComponent:
                     MatchedPoint(
                         point_id=point_id,
                         score=evidence.score,
+                        provisional_score=evidence.provisional_score,
                         max_score=evidence.max_score,
                         similarity=evidence.similarity,
                         evidence=evidence.evidence,
@@ -237,6 +252,7 @@ class ScoreAggregatorComponent:
                     MissedPoint(
                         point_id=point_id,
                         score=evidence.score,
+                        provisional_score=evidence.provisional_score,
                         max_score=evidence.max_score,
                         reason=evidence.reason,
                         similarity=evidence.similarity,

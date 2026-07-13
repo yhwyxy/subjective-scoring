@@ -56,10 +56,12 @@ def lexical_similarity(a: str, b: str) -> float:
 
     ga, gb = grams(a), grams(b)
     dice = (2 * len(ga & gb) / (len(ga) + len(gb))) if ga and gb else 0.0
-    # 包含关系加分（学生答案覆盖评分点短句）
+    # 包含关系加分，但按短文本占长文本的比例衰减，避免“通常幂等”之类
+    # 很短的公共片段压过包含完整主语、条件和结论的局部证据。
     contain = 0.0
     if a in b or b in a:
-        contain = 0.85
+        shorter, longer = sorted((len(a), len(b)))
+        contain = 0.85 * (shorter / longer) ** 0.5
     score = max(0.55 * jacc + 0.45 * dice, contain * 0.9)
     return float(max(0.0, min(1.0, score)))
 

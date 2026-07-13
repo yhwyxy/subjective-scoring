@@ -136,6 +136,24 @@ class TextRelationThresholds(BaseModel):
         le=1.0,
         description="校准相似度达到该值时，评分点可判定为 supported",
     )
+    local_cross_encoder_support: float = Field(
+        default=0.55,
+        ge=0.0,
+        le=1.0,
+        description="本地 CrossEncoder 的默认支持阈值",
+    )
+    remote_reranker_support: float = Field(
+        default=0.55,
+        ge=0.0,
+        le=1.0,
+        description="云端 Reranker 的默认支持阈值",
+    )
+    lexical_fallback_support: float = Field(
+        default=0.35,
+        ge=0.0,
+        le=1.0,
+        description="词法回退后端的默认支持阈值",
+    )
     conflict: float = Field(
         default=0.8,
         ge=0.0,
@@ -153,6 +171,10 @@ class TextRelationThresholds(BaseModel):
     apply_gate_to_synthetic_reference: bool = Field(
         default=False,
         description="是否对未拆分的全文标准答案兜底点应用原子评分门槛",
+    )
+    validate_reference_points: bool = Field(
+        default=True,
+        description="评分前验证标准答案能否支持 required / critical 原子评分点",
     )
 
 
@@ -283,6 +305,11 @@ class EvidenceItem(BaseModel):
         description="关联评分点 ID；SQL/Code 结构证据可为空，由 Aggregator 合成",
     )
     score: float = Field(default=0.0, ge=0)
+    provisional_score: float | None = Field(
+        default=None,
+        ge=0,
+        description="关系不确定时供人工复核参考的估分，不可直接自动入账",
+    )
     max_score: float = Field(default=0.0, ge=0)
     evidence: str | None = Field(default=None, description="学生答案中的对应片段")
     reason: str | None = Field(default=None, description="判分说明")
@@ -312,6 +339,11 @@ class IntermediateScoreResult(BaseModel):
     scorer: str = Field(..., min_length=1, description="评分器名称")
     scoring_mode: ScoringMode
     score: float = Field(..., ge=0)
+    provisional_score: float | None = Field(
+        default=None,
+        ge=0,
+        description="拒判时的待复核估分；正式自动分仍使用 score",
+    )
     max_score: float = Field(..., ge=0)
     confidence: float = Field(..., ge=0.0, le=1.0)
     matched_evidence: list[EvidenceItem] = Field(default_factory=list)
@@ -335,6 +367,14 @@ class IntermediateScoreResult(BaseModel):
             raise ValueError(
                 f"中间分 score ({self.score}) 超过 max_score ({self.max_score})"
             )
+        if (
+            self.provisional_score is not None
+            and self.provisional_score > self.max_score + 1e-6
+        ):
+            raise ValueError(
+                "中间待复核估分 provisional_score "
+                f"({self.provisional_score}) 超过 max_score ({self.max_score})"
+            )
         return self
 
 
@@ -350,6 +390,7 @@ class MatchedPoint(BaseModel):
 
     point_id: str
     score: float = Field(..., ge=0)
+    provisional_score: float | None = Field(default=None, ge=0)
     max_score: float = Field(..., ge=0)
     similarity: float | None = Field(default=None, ge=0.0, le=1.0)
     evidence: str | None = None
@@ -365,6 +406,7 @@ class MissedPoint(BaseModel):
 
     point_id: str
     score: float = Field(default=0.0, ge=0)
+    provisional_score: float | None = Field(default=None, ge=0)
     max_score: float = Field(..., ge=0)
     reason: str | None = None
     similarity: float | None = Field(default=None, ge=0.0, le=1.0)
@@ -380,6 +422,11 @@ class ScoringResult(BaseModel):
 
     question_id: str = Field(..., min_length=1)
     score: float = Field(..., ge=0)
+    provisional_score: float | None = Field(
+        default=None,
+        ge=0,
+        description="manual_review 时供人工参考的估分，不代表最终成绩",
+    )
     max_score: float = Field(..., ge=0)
     scoring_mode: ScoringMode
     track: str = Field(
@@ -410,6 +457,14 @@ class ScoringResult(BaseModel):
         if self.score > self.max_score + 1e-6:
             raise ValueError(
                 f"最终分 score ({self.score}) 超过 max_score ({self.max_score})"
+            )
+        if (
+            self.provisional_score is not None
+            and self.provisional_score > self.max_score + 1e-6
+        ):
+            raise ValueError(
+                "待复核估分 provisional_score "
+                f"({self.provisional_score}) 超过 max_score ({self.max_score})"
             )
         # review_level 与 need_manual_review 保持一致
         expects_review = self.review_level != ReviewLevel.AUTO_PASS

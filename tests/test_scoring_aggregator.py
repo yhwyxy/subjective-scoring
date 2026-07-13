@@ -38,6 +38,7 @@ def intermediate(
     *,
     scorer: str,
     score: float,
+    provisional_score: float | None = None,
     confidence: float,
     max_score: float = 10,
     scoring_mode: ScoringMode = ScoringMode.TEXT,
@@ -50,6 +51,7 @@ def intermediate(
         scorer=scorer,
         scoring_mode=scoring_mode,
         score=score,
+        provisional_score=provisional_score,
         max_score=max_score,
         confidence=confidence,
         matched_evidence=[EvidenceItem.model_validate(item) for item in matched or []],
@@ -65,11 +67,13 @@ def test_aggregates_score_confidence_evidence_and_review(scoring_request):
         intermediate(
             scorer="TextRerankerScorer",
             score=8,
+            provisional_score=9,
             confidence=0.72,
             matched=[
                 {
                     "point_id": "p1",
                     "score": 4,
+                    "provisional_score": 4.5,
                     "max_score": 5,
                     "evidence": "查询更快",
                     "reason": "命中效率评分点",
@@ -79,6 +83,7 @@ def test_aggregates_score_confidence_evidence_and_review(scoring_request):
             missed=[
                 {
                     "point_id": "p2",
+                    "provisional_score": 4.5,
                     "max_score": 5,
                     "reason": "未提到减少全表扫描",
                 }
@@ -89,11 +94,14 @@ def test_aggregates_score_confidence_evidence_and_review(scoring_request):
 
     assert result.question_id == "q1"
     assert result.score == 8
+    assert result.provisional_score == 9
     assert result.confidence == 0.72
     assert result.review_level is ReviewLevel.SUGGESTED_REVIEW
     assert result.need_manual_review is True
     assert result.track == "TextRerankerScorer"
     assert result.matched_points[0].evidence == "查询更快"
+    assert result.matched_points[0].provisional_score == 4.5
+    assert result.missed_points[0].provisional_score == 4.5
     assert result.missed_points[0].point_id == "p2"
     assert result.warnings == ["答案较短"]
 

@@ -109,7 +109,9 @@ def test_stateful_answer_conflicts_with_stateless_point():
 
 def test_supported_atomic_point_keeps_partial_credit_when_another_point_conflicts():
     def sim(student: str, point: str) -> float:
-        return {"REST 以资源为中心": 0.9, "REST 通信保持无状态": 0.95}[point]
+        if point == "REST 以资源为中心":
+            return 0.9 if "资源" in student else 0.1
+        return 0.95 if "有状态" in student or "无状态" in student else 0.1
 
     scorer = TextRerankerScorer(pair_scorer=sim, allow_model_load=False)
     result = scorer.score(
@@ -129,8 +131,13 @@ def test_supported_atomic_point_keeps_partial_credit_when_another_point_conflict
 
 
 def test_critical_conflict_can_cap_total_score():
+    def sim(student: str, point: str) -> float:
+        if point == "REST 以资源为中心":
+            return 0.95 if "资源" in student else 0.1
+        return 0.95 if "有状态" in student or "无状态" in student else 0.1
+
     scorer = TextRerankerScorer(
-        pair_scorer=lambda student, point: 0.95,
+        pair_scorer=sim,
         allow_model_load=False,
     )
     result = scorer.score(
@@ -147,6 +154,7 @@ def test_critical_conflict_can_cap_total_score():
                 },
             ],
             student_answer="REST 以资源为中心，但 REST 是有状态的",
+            reference_answer="REST 以资源为中心，REST 通信保持无状态",
         )
     )
 
@@ -170,10 +178,108 @@ def test_no_supported_points_with_unknown_relation_rejects_auto_scoring():
     )
 
     assert result.score == 0.0
+    assert result.provisional_score == 3.0
+    assert result.missed_evidence[0].provisional_score == 3.0
     assert result.missed_evidence[0].relation is PointRelation.UNKNOWN
     assert result.force_manual_review is True
     assert result.metadata["decision_reason"] == "no_supported_points_uncertain"
     assert any("拒绝自动定分" in warning for warning in result.warnings)
+
+
+def test_rubric_self_check_rejects_when_reference_misses_required_point():
+    def sim(student: str, point: str) -> float:
+        return 0.9 if "REST" in student else 0.1
+
+    scorer = TextRerankerScorer(pair_scorer=sim, allow_model_load=False)
+    result = scorer.score(
+        _req(
+            scoring_points=[
+                {
+                    "id": "resource",
+                    "text": "REST 以资源为中心",
+                    "score": 10,
+                    "required": True,
+                }
+            ],
+            student_answer="REST 以资源为中心",
+            reference_answer="标准答案没有描述该评分点",
+        )
+    )
+
+    assert result.score == 9.0
+    assert result.force_manual_review is True
+    assert result.metadata["decision_reason"] == "rubric_self_check_failed"
+    assert result.metadata["rubric_validation"][0]["supported"] is False
+
+
+def test_complete_specialist_answers_use_local_evidence_without_false_negation():
+    cases = [
+        {
+            "id": "text-1",
+            "answer": (
+                "幂等表示同一请求执行一次或多次对服务器资源产生的预期效果相同。"
+                "GET 只读取资源，通常幂等；PUT 按指定状态整体创建或替换资源，"
+                "重复执行结果相同，通常幂等；POST 通常创建新资源或触发操作，"
+                "重复提交可能产生多个结果，因此通常不幂等。"
+            ),
+            "points": [
+                {"id": "p1", "text": "幂等是重复执行与执行一次的资源效果相同", "score": 5, "required": True},
+                {"id": "p2", "text": "GET 通常幂等且用于读取", "score": 5},
+                {"id": "p3", "text": "PUT 通常幂等且按目标状态创建或替换", "score": 5},
+                {"id": "p4", "text": "POST 通常不幂等且重复提交可能产生多个结果", "score": 5},
+            ],
+        },
+        {
+            "id": "text-3",
+            "answer": (
+                "常用流程是先更新数据库，再删除缓存，并通过重试或消息队列补偿删除失败。"
+                "穿透是查询不存在的数据持续绕过缓存，可用布隆过滤器或空值缓存；"
+                "击穿是热点键失效瞬间大量请求访问数据库，可用互斥锁或逻辑过期；"
+                "雪崩是大量键同时失效，可用随机过期时间、限流和多级缓存。"
+            ),
+            "points": [
+                {"id": "p1", "text": "更新数据库后删除缓存并对失败进行补偿", "score": 5, "required": True},
+                {"id": "p2", "text": "穿透针对不存在数据并可用布隆过滤器或空值缓存", "score": 5},
+                {"id": "p3", "text": "击穿针对热点键失效并可用互斥锁或逻辑过期", "score": 5},
+                {"id": "p4", "text": "雪崩针对大量键同时失效并可用随机过期或限流", "score": 5},
+            ],
+        },
+    ]
+    scorer = TextRerankerScorer(allow_model_load=False)
+
+    for case in cases:
+        result = scorer.score(
+            ScoringRequest.model_validate(
+                {
+                    "question_id": case["id"],
+                    "max_score": 20,
+                    "scoring_mode": "text",
+                    "reference_answer": case["answer"],
+                    "student_answer": case["answer"],
+                    "scoring_points": case["points"],
+                }
+            )
+        )
+        assert result.score > 0
+        assert result.metadata["relation_counts"]["contradicted"] == 0
+        assert not any("否定词冲突" in warning for warning in result.warnings)
+
+
+def test_unrelated_specialist_answer_stays_zero_with_small_provisional_score():
+    scorer = TextRerankerScorer(allow_model_load=False)
+    result = scorer.score(
+        _req(
+            scoring_points=[
+                {"id": "p1", "text": "幂等是重复执行效果相同", "score": 10, "required": True}
+            ],
+            reference_answer="幂等表示重复执行与执行一次效果相同。",
+            student_answer="这个问题只需要增加服务器内存即可解决。",
+        )
+    )
+
+    assert result.score == 0.0
+    assert result.provisional_score is not None
+    assert result.provisional_score <= 1.0
 
 
 def test_negation_only_applies_to_the_local_uniform_interface_clause():

@@ -101,6 +101,7 @@ def test_text_pipeline_end_to_end():
     assert result.scoring_mode is ScoringMode.TEXT
     assert result.track == "TextRerankerScorer"
     assert result.score == 8.0
+    assert result.provisional_score is None
     assert result.confidence == 0.9
     assert result.need_manual_review is False
     assert result.review_level is ReviewLevel.AUTO_PASS

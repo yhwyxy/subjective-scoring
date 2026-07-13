@@ -1,6 +1,6 @@
 [project]
 name = "subjective-scoring"
-version = "0.1.3"
+version = "0.1.4"
 description = "Multi-engine subjective answer scoring: text scoring-points, SQL AST, code hybrid (structure + semantic)."
 readme = "README.md"
 requires-python = ">=3.12"

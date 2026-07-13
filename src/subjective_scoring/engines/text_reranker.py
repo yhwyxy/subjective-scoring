@@ -81,6 +81,14 @@ class ResolvedScoringPoint:
     synthetic: bool = False
 
 
+@dataclass(frozen=True)
+class PointEvidenceMatch:
+    evidence: str
+    raw_similarity: float
+    whole_answer_similarity: float
+    candidate_count: int
+
+
 @dataclass
 class RuleHit:
     point_id: str
@@ -256,6 +264,11 @@ class RuleInterceptor:
             clause_negated = self._has_negation(clause)
             if point_negated == clause_negated:
                 continue
+            # 评分点本身为否定命题时，证据片段没有重复否定词只代表信息不完整，
+            # 不能据此推断学生明确给出了相反结论。领域极性规则已在上方处理
+            # “无状态/有状态”等显式对立。
+            if point_negated and not clause_negated:
+                continue
             # 单个宽泛 token 容易把别处的否定词错误关联到评分点。
             if overlap >= 2 or any(
                 len(token) >= 4 and token in clause for token in point_tokens
@@ -290,6 +303,10 @@ class RuleInterceptor:
         return not pn.issubset(sn)
 
     def _unit_mismatch(self, point: str, student: str) -> bool:
+        # “行/列/次”等汉字在普通词语中很常见；只有评分点明确包含数字时，
+        # 才将其解释为需要严格核对的计量单位。
+        if not self._extract_numbers(point):
+            return False
         pu = {m.group(0).lower() for m in _UNIT_RE.finditer(point or "")}
         if not pu:
             return False
@@ -350,16 +367,84 @@ class TextRerankerScorer:
         self.rule_interceptor = rule_interceptor or RuleInterceptor()
         self.calibrator = calibrator
 
+    def _support_threshold_for_backend(
+        self,
+        request: ScoringRequest,
+        backend_name: str,
+    ) -> float:
+        options = request.scoring_config.text_relation_thresholds
+        if self.match_threshold is not None:
+            return self.match_threshold
+        # 显式配置 support 时维持 v0.1.3 的全后端覆盖语义。
+        if "support" in options.model_fields_set:
+            return options.support
+        if backend_name == "lexical_fallback":
+            return options.lexical_fallback_support
+        if backend_name.startswith("cohere:"):
+            return options.remote_reranker_support
+        return options.local_cross_encoder_support
+
+    @staticmethod
+    def _evidence_candidates(answer: str) -> list[str]:
+        value = (answer or "").strip()
+        if not value:
+            return []
+        clauses = [
+            clause.strip()
+            for clause in _CLAUSE_RE.split(value)
+            if clause.strip()
+        ]
+        windows = [
+            "，".join(clauses[index : index + size])
+            for size in (2, 3)
+            for index in range(max(0, len(clauses) - size + 1))
+        ]
+        candidates: list[str] = []
+        for candidate in [*clauses, *windows, value]:
+            if candidate and candidate not in candidates:
+                candidates.append(candidate)
+        return candidates
+
+    def _score_evidence_matches(
+        self,
+        scorer: PairScorer,
+        answer: str,
+        points: list[ResolvedScoringPoint],
+    ) -> list[PointEvidenceMatch]:
+        candidates = self._evidence_candidates(answer)
+        if not candidates:
+            return [PointEvidenceMatch("", 0.0, 0.0, 0) for _point in points]
+
+        pairs = [
+            (candidate, point.text)
+            for point in points
+            for candidate in candidates
+        ]
+        scores = [float(score) for score in scorer.score_pairs(pairs)]
+        candidate_count = len(candidates)
+        whole_index = candidates.index((answer or "").strip())
+        matches: list[PointEvidenceMatch] = []
+        for point_index, _point in enumerate(points):
+            start = point_index * candidate_count
+            point_scores = scores[start : start + candidate_count]
+            if len(point_scores) != candidate_count:
+                point_scores.extend([0.0] * (candidate_count - len(point_scores)))
+            best_index = max(range(candidate_count), key=point_scores.__getitem__)
+            matches.append(
+                PointEvidenceMatch(
+                    evidence=candidates[best_index],
+                    raw_similarity=point_scores[best_index],
+                    whole_answer_similarity=point_scores[whole_index],
+                    candidate_count=candidate_count,
+                )
+            )
+        return matches
+
     def score(self, request: ScoringRequest) -> IntermediateScoreResult:
         points, warnings, force_review = self.point_resolver.resolve(request)
         student = (request.student_answer or "").strip()
         precision = request.scoring_config.score_precision
         relation_options = request.scoring_config.text_relation_thresholds
-        support_threshold = (
-            self.match_threshold
-            if self.match_threshold is not None
-            else relation_options.support
-        )
         conflict_threshold = relation_options.conflict
 
         if not points:
@@ -382,9 +467,9 @@ class TextRerankerScorer:
         if backend_name == "lexical_fallback":
             warnings.append("语义模型不可用，已回退到词法相似度")
 
-        pairs = [(student, p.text) for p in points]
-        similarities = scorer.score_pairs(pairs) if student else [0.0] * len(points)
+        support_threshold = self._support_threshold_for_backend(request, backend_name)
         calibrator = self.calibrator or default_calibrator_for_backend(backend_name)
+        student_matches = self._score_evidence_matches(scorer, student, points)
 
         matched: list[EvidenceItem] = []
         missed: list[EvidenceItem] = []
@@ -400,14 +485,63 @@ class TextRerankerScorer:
         total_conflict_cap_ratio = 1.0
         applied_caps: list[str] = []
         decision_reason: str | None = None
+        provisional_total = 0.0
+        rubric_diagnostics: list[dict[str, object]] = []
         point_diagnostics: list[dict[str, object]] = []
 
-        for point, raw_sim in zip(points, similarities):
-            raw_sim = float(max(0.0, min(1.0, raw_sim)))
+        reference = (request.reference_answer or "").strip()
+        if relation_options.validate_reference_points and reference:
+            reference_matches = self._score_evidence_matches(scorer, reference, points)
+            for point, reference_match in zip(points, reference_matches):
+                if not (point.required or point.critical):
+                    continue
+                reference_raw = float(
+                    max(0.0, min(1.0, reference_match.raw_similarity))
+                )
+                reference_sim = float(
+                    max(0.0, min(1.0, calibrator.calibrate(reference_raw)))
+                )
+                reference_rule = self.rule_interceptor.check(
+                    point.text,
+                    reference_match.evidence,
+                    point.id,
+                )
+                reference_conflict = any(
+                    hit.confidence >= conflict_threshold
+                    for hit in reference_rule.hard_hits
+                )
+                reference_supported = (
+                    reference_sim >= support_threshold and not reference_conflict
+                )
+                rubric_diagnostics.append(
+                    {
+                        "point_id": point.id,
+                        "supported": reference_supported,
+                        "raw_similarity": round(reference_raw, 4),
+                        "calibrated_similarity": round(reference_sim, 4),
+                        "evidence": reference_match.evidence,
+                        "hard_conflict": reference_conflict,
+                    }
+                )
+                if not reference_supported:
+                    force_review = True
+                    decision_reason = "rubric_self_check_failed"
+                    warnings.append(
+                        f"评分表自检失败：标准答案未可靠支持必答或关键评分点 {point.id}"
+                    )
+
+        for point, evidence_match in zip(points, student_matches):
+            raw_sim = float(
+                max(0.0, min(1.0, evidence_match.raw_similarity))
+            )
             calibrated_sim = float(
                 max(0.0, min(1.0, calibrator.calibrate(raw_sim)))
             )
-            rule = self.rule_interceptor.check(point.text, student, point.id)
+            rule = self.rule_interceptor.check(
+                point.text,
+                evidence_match.evidence,
+                point.id,
+            )
             confident_hard_hits = [
                 hit for hit in rule.hard_hits if hit.confidence >= conflict_threshold
             ]
@@ -429,6 +563,7 @@ class TextRerankerScorer:
                 relation_confidence = max(0.0, 1.0 - calibrated_sim)
 
             point_score = 0.0
+            point_provisional_score = 0.0
             adjusted_confidence = relation_confidence
             reason_parts = [
                 f"原始相关度 {raw_sim:.2f}",
@@ -448,6 +583,7 @@ class TextRerankerScorer:
                 if soft_hits:
                     point_score *= 0.65
                     adjusted_confidence = calibrated_sim * 0.8
+                point_provisional_score = point_score
             elif relation == PointRelation.CONTRADICTED:
                 contradicted_count += 1
                 hard_conflict = True
@@ -462,11 +598,15 @@ class TextRerankerScorer:
                     )
             else:
                 unknown_count += 1
+                point_provisional_score = calibrated_sim * point.score
+                if uncertain_hard_hits:
+                    point_provisional_score *= 0.35
+                elif any(hit.severity != "hard" for hit in rule.hits):
+                    point_provisional_score *= 0.65
                 if point.required or point.critical:
                     required_unknown = True
                 # 未拆分全文仅用于兼容兜底估分，始终要求人工复核。
                 if point.synthetic and not relation_options.apply_gate_to_synthetic_reference:
-                    point_score = calibrated_sim * point.score
                     force_review = True
                     reason_parts.append("全文兜底点未应用原子评分门槛，仅作待复核估分")
 
@@ -475,6 +615,12 @@ class TextRerankerScorer:
                     "point_id": point.id,
                     "raw_similarity": round(raw_sim, 4),
                     "calibrated_similarity": round(calibrated_sim, 4),
+                    "whole_answer_similarity": round(
+                        max(0.0, min(1.0, evidence_match.whole_answer_similarity)),
+                        4,
+                    ),
+                    "evidence": evidence_match.evidence,
+                    "candidate_count": evidence_match.candidate_count,
                     "adjusted_confidence": round(adjusted_confidence, 4),
                     "relation": relation.value,
                     "relation_confidence": round(relation_confidence, 4),
@@ -492,15 +638,21 @@ class TextRerankerScorer:
             )
 
             point_score = round(min(point_score, point.score), precision)
+            point_provisional_score = round(
+                min(point_provisional_score, point.score),
+                precision,
+            )
             total += point_score
+            provisional_total += point_provisional_score
             weighted_conf += relation_confidence * point.score
             weight_sum += point.score
 
             evidence = EvidenceItem(
                 point_id=point.id,
                 score=point_score,
+                provisional_score=point_provisional_score,
                 max_score=point.score,
-                evidence=self._snippet(student, point.text) if point_score > 0 else None,
+                evidence=evidence_match.evidence or None,
                 reason="；".join(reason_parts),
                 similarity=round(calibrated_sim, 4),
                 relation=relation,
@@ -513,12 +665,13 @@ class TextRerankerScorer:
                     EvidenceItem(
                         point_id=point.id,
                         score=point_score,
+                        provisional_score=point_provisional_score,
                         max_score=point.score,
                         reason=evidence.reason
                         if rule.hits
                         else f"未充分覆盖评分点：{point.text}",
                         similarity=round(calibrated_sim, 4),
-                        evidence=self._snippet(student, point.text),
+                        evidence=evidence_match.evidence or None,
                         relation=relation,
                         relation_confidence=round(relation_confidence, 4),
                     )
@@ -528,17 +681,25 @@ class TextRerankerScorer:
         points_total = sum(p.score for p in points) or request.max_score
         if abs(points_total - request.max_score) > 1e-6 and points_total > 0:
             mapped = total / points_total * request.max_score
+            mapped_provisional = provisional_total / points_total * request.max_score
         else:
             mapped = total
+            mapped_provisional = provisional_total
         final_score = round(min(max(mapped, 0.0), request.max_score), precision)
+        provisional_score = round(
+            min(max(mapped_provisional, 0.0), request.max_score),
+            precision,
+        )
 
         if total_conflict_zero:
             final_score = 0.0
+            provisional_score = 0.0
             applied_caps.append("critical_conflict:0.0")
             decision_reason = "critical_point_conflict_zero_total"
         elif total_conflict_cap_ratio < 1.0:
             cap = round(request.max_score * total_conflict_cap_ratio, precision)
             final_score = min(final_score, cap)
+            provisional_score = min(provisional_score, cap)
             applied_caps.append(f"critical_conflict:{total_conflict_cap_ratio}")
             decision_reason = "critical_point_conflict_cap"
 
@@ -569,6 +730,7 @@ class TextRerankerScorer:
             decision_reason = decision_reason or "all_points_contradicted"
         if not student:
             final_score = 0.0
+            provisional_score = 0.0
             confidence = 0.0
             force_review = True
             warnings.append("学生答案为空")
@@ -584,6 +746,7 @@ class TextRerankerScorer:
             scorer=self.name,
             scoring_mode=ScoringMode.TEXT,
             score=final_score,
+            provisional_score=provisional_score,
             max_score=request.max_score,
             confidence=round(float(max(0.0, min(1.0, confidence))), 4),
             matched_evidence=matched,
@@ -611,6 +774,7 @@ class TextRerankerScorer:
                 ),
                 "decision_reason": decision_reason,
                 "applied_caps": applied_caps,
+                "rubric_validation": rubric_diagnostics,
                 "calibrator": getattr(calibrator, "name", type(calibrator).__name__),
                 "point_diagnostics": point_diagnostics,
             },
