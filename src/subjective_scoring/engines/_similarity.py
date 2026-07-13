@@ -7,7 +7,7 @@ import math
 import re
 from collections.abc import Callable, Sequence
 from functools import lru_cache
-from typing import Protocol
+from typing import Protocol, runtime_checkable
 
 logger = logging.getLogger(__name__)
 
@@ -18,6 +18,14 @@ class PairScorer(Protocol):
     """批量 (query, document) 打分接口。"""
 
     def score_pairs(self, pairs: Sequence[tuple[str, str]]) -> list[float]:
+        ...
+
+
+@runtime_checkable
+class DocumentBatchScorer(Protocol):
+    """单个 query 对多个 documents 的原生批量打分接口。"""
+
+    def score_documents(self, query: str, documents: Sequence[str]) -> list[float]:
         ...
 
 
@@ -142,6 +150,7 @@ def resolve_pair_scorer(
 
 __all__ = [
     "CrossEncoderPairScorer",
+    "DocumentBatchScorer",
     "FunctionalPairScorer",
     "PairScorer",
     "SimilarityFn",

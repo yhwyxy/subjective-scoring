@@ -3,14 +3,17 @@
 from __future__ import annotations
 
 import re
+from collections import OrderedDict
 from collections.abc import Sequence
 from dataclasses import dataclass, field
+from threading import RLock
 
 from subjective_scoring.engines.calibration import (
     ScoreCalibrator,
     default_calibrator_for_backend,
 )
 from subjective_scoring.engines._similarity import (
+    DocumentBatchScorer,
     PairScorer,
     SimilarityFn,
     lexical_similarity,
@@ -358,7 +361,10 @@ class TextRerankerScorer:
         point_resolver: ScoringPointResolver | None = None,
         rule_interceptor: RuleInterceptor | None = None,
         calibrator: ScoreCalibrator | None = None,
+        reference_cache_size: int = 256,
     ) -> None:
+        if reference_cache_size < 0:
+            raise ValueError("reference_cache_size must not be negative")
         self._injected = pair_scorer
         self.match_threshold = match_threshold
         self.allow_model_load = allow_model_load
@@ -366,6 +372,11 @@ class TextRerankerScorer:
         self.point_resolver = point_resolver or ScoringPointResolver()
         self.rule_interceptor = rule_interceptor or RuleInterceptor()
         self.calibrator = calibrator
+        self.reference_cache_size = reference_cache_size
+        self._reference_match_cache: OrderedDict[
+            tuple[object, ...], tuple[PointEvidenceMatch, ...]
+        ] = OrderedDict()
+        self._reference_cache_lock = RLock()
 
     def _support_threshold_for_backend(
         self,
@@ -405,40 +416,129 @@ class TextRerankerScorer:
                 candidates.append(candidate)
         return candidates
 
+    @staticmethod
+    def _best_evidence_match(
+        answer: str,
+        candidates: list[str],
+        scores: Sequence[float],
+    ) -> PointEvidenceMatch:
+        if not candidates:
+            return PointEvidenceMatch("", 0.0, 0.0, 0)
+        values = [float(score) for score in scores[: len(candidates)]]
+        if len(values) < len(candidates):
+            values.extend([0.0] * (len(candidates) - len(values)))
+        best_index = max(range(len(candidates)), key=values.__getitem__)
+        whole_index = candidates.index((answer or "").strip())
+        return PointEvidenceMatch(
+            evidence=candidates[best_index],
+            raw_similarity=values[best_index],
+            whole_answer_similarity=values[whole_index],
+            candidate_count=len(candidates),
+        )
+
+    def _score_evidence_sets(
+        self,
+        scorer: PairScorer,
+        answers: Sequence[str],
+        points: list[ResolvedScoringPoint],
+    ) -> list[list[PointEvidenceMatch]]:
+        candidate_sets = [self._evidence_candidates(answer) for answer in answers]
+        matches = [
+            [PointEvidenceMatch("", 0.0, 0.0, 0) for _point in points]
+            for _answer in answers
+        ]
+
+        if isinstance(scorer, DocumentBatchScorer):
+            for point_index, point in enumerate(points):
+                documents = [
+                    candidate
+                    for candidates in candidate_sets
+                    for candidate in candidates
+                ]
+                if not documents:
+                    continue
+                document_scores = scorer.score_documents(point.text, documents)
+                offset = 0
+                for answer_index, candidates in enumerate(candidate_sets):
+                    end = offset + len(candidates)
+                    matches[answer_index][point_index] = self._best_evidence_match(
+                        answers[answer_index],
+                        candidates,
+                        document_scores[offset:end],
+                    )
+                    offset = end
+            return matches
+
+        for answer_index, (answer, candidates) in enumerate(
+            zip(answers, candidate_sets)
+        ):
+            if not candidates:
+                continue
+            pairs = [
+                (candidate, point.text)
+                for point in points
+                for candidate in candidates
+            ]
+            scores = [float(score) for score in scorer.score_pairs(pairs)]
+            candidate_count = len(candidates)
+            for point_index, _point in enumerate(points):
+                start = point_index * candidate_count
+                end = start + candidate_count
+                matches[answer_index][point_index] = self._best_evidence_match(
+                    answer,
+                    candidates,
+                    scores[start:end],
+                )
+        return matches
+
     def _score_evidence_matches(
         self,
         scorer: PairScorer,
         answer: str,
         points: list[ResolvedScoringPoint],
     ) -> list[PointEvidenceMatch]:
-        candidates = self._evidence_candidates(answer)
-        if not candidates:
-            return [PointEvidenceMatch("", 0.0, 0.0, 0) for _point in points]
+        return self._score_evidence_sets(scorer, [answer], points)[0]
 
-        pairs = [
-            (candidate, point.text)
-            for point in points
-            for candidate in candidates
-        ]
-        scores = [float(score) for score in scorer.score_pairs(pairs)]
-        candidate_count = len(candidates)
-        whole_index = candidates.index((answer or "").strip())
-        matches: list[PointEvidenceMatch] = []
-        for point_index, _point in enumerate(points):
-            start = point_index * candidate_count
-            point_scores = scores[start : start + candidate_count]
-            if len(point_scores) != candidate_count:
-                point_scores.extend([0.0] * (candidate_count - len(point_scores)))
-            best_index = max(range(candidate_count), key=point_scores.__getitem__)
-            matches.append(
-                PointEvidenceMatch(
-                    evidence=candidates[best_index],
-                    raw_similarity=point_scores[best_index],
-                    whole_answer_similarity=point_scores[whole_index],
-                    candidate_count=candidate_count,
-                )
-            )
-        return matches
+    @staticmethod
+    def _reference_cache_key(
+        backend_name: str,
+        reference: str,
+        points: list[ResolvedScoringPoint],
+    ) -> tuple[object, ...]:
+        return (
+            backend_name,
+            reference,
+            tuple(
+                (point.id, point.text, point.required, point.critical)
+                for point in points
+            ),
+        )
+
+    def _get_cached_reference_matches(
+        self,
+        key: tuple[object, ...],
+    ) -> list[PointEvidenceMatch] | None:
+        if self.reference_cache_size == 0:
+            return None
+        with self._reference_cache_lock:
+            cached = self._reference_match_cache.get(key)
+            if cached is None:
+                return None
+            self._reference_match_cache.move_to_end(key)
+            return list(cached)
+
+    def _cache_reference_matches(
+        self,
+        key: tuple[object, ...],
+        matches: list[PointEvidenceMatch],
+    ) -> None:
+        if self.reference_cache_size == 0:
+            return
+        with self._reference_cache_lock:
+            self._reference_match_cache[key] = tuple(matches)
+            self._reference_match_cache.move_to_end(key)
+            while len(self._reference_match_cache) > self.reference_cache_size:
+                self._reference_match_cache.popitem(last=False)
 
     def score(self, request: ScoringRequest) -> IntermediateScoreResult:
         points, warnings, force_review = self.point_resolver.resolve(request)
@@ -469,7 +569,41 @@ class TextRerankerScorer:
 
         support_threshold = self._support_threshold_for_backend(request, backend_name)
         calibrator = self.calibrator or default_calibrator_for_backend(backend_name)
-        student_matches = self._score_evidence_matches(scorer, student, points)
+        reference = (request.reference_answer or "").strip()
+        reference_matches: list[PointEvidenceMatch] | None = None
+        reference_cache_hit = False
+        if relation_options.validate_reference_points and reference:
+            reference_cache_key = self._reference_cache_key(
+                backend_name,
+                reference,
+                points,
+            )
+            reference_matches = self._get_cached_reference_matches(
+                reference_cache_key
+            )
+            if reference_matches is not None:
+                reference_cache_hit = True
+                student_matches = self._score_evidence_matches(
+                    scorer,
+                    student,
+                    points,
+                )
+            else:
+                student_matches, reference_matches = self._score_evidence_sets(
+                    scorer,
+                    [student, reference],
+                    points,
+                )
+                self._cache_reference_matches(
+                    reference_cache_key,
+                    reference_matches,
+                )
+        else:
+            student_matches = self._score_evidence_matches(
+                scorer,
+                student,
+                points,
+            )
 
         matched: list[EvidenceItem] = []
         missed: list[EvidenceItem] = []
@@ -489,9 +623,7 @@ class TextRerankerScorer:
         rubric_diagnostics: list[dict[str, object]] = []
         point_diagnostics: list[dict[str, object]] = []
 
-        reference = (request.reference_answer or "").strip()
-        if relation_options.validate_reference_points and reference:
-            reference_matches = self._score_evidence_matches(scorer, reference, points)
+        if reference_matches is not None:
             for point, reference_match in zip(points, reference_matches):
                 if not (point.required or point.critical):
                     continue
@@ -775,6 +907,12 @@ class TextRerankerScorer:
                 "decision_reason": decision_reason,
                 "applied_caps": applied_caps,
                 "rubric_validation": rubric_diagnostics,
+                "reference_cache_hit": reference_cache_hit,
+                "evidence_batch_mode": (
+                    "query_documents"
+                    if isinstance(scorer, DocumentBatchScorer)
+                    else "pair_matrix"
+                ),
                 "calibrator": getattr(calibrator, "name", type(calibrator).__name__),
                 "point_diagnostics": point_diagnostics,
             },

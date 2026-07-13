@@ -262,13 +262,18 @@ def test_context_manager_closes_owned_client(monkeypatch):
 
 
 def test_remote_pair_scorer_integrates_with_subjective_service():
+    calls: list[dict] = []
+
     def handler(request: httpx.Request) -> httpx.Response:
+        payload = json.loads(request.content)
+        calls.append(payload)
+        relevance = 0.8 if payload["query"] == "point one" else 0.02
         return httpx.Response(
             200,
             json={
                 "results": [
-                    {"index": 0, "relevance_score": 0.8},
-                    {"index": 1, "relevance_score": 0.2},
+                    {"index": index, "relevance_score": relevance}
+                    for index in range(len(payload["documents"]))
                 ]
             },
         )
@@ -291,9 +296,65 @@ def test_remote_pair_scorer_integrates_with_subjective_service():
         }
     )
 
-    assert result.score == 9.0
+    assert len(calls) == 2
+    assert {call["query"] for call in calls} == {"point one", "point two"}
+    assert result.score == 5.0
     assert result.track == "TextRerankerScorer"
-    assert "原始相关度 0.20；校准覆盖度 0.80" in result.matched_points[1].reason
+    assert "原始相关度 0.80；校准覆盖度 1.00" in result.matched_points[0].reason
+
+
+def test_text_evidence_batching_is_bounded_by_point_count_and_caches_reference():
+    calls: list[dict] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        payload = json.loads(request.content)
+        calls.append(payload)
+        return httpx.Response(
+            200,
+            json={
+                "results": [
+                    {"index": index, "relevance_score": 0.2}
+                    for index in range(len(payload["documents"]))
+                ]
+            },
+        )
+
+    service = SubjectiveScoringService(
+        allow_model_load=False,
+        text_pair_scorer=_scorer(handler),
+    )
+    request = {
+        "question_id": "perf",
+        "max_score": 10,
+        "scoring_mode": "text",
+        "reference_answer": "资源使用 URI 标识。请求保持无状态。",
+        "student_answer": "资源使用 URI 标识。请求保持无状态。",
+        "scoring_points": [
+            {
+                "id": "resource",
+                "text": "资源使用 URI 标识",
+                "score": 5,
+                "required": True,
+            },
+            {
+                "id": "stateless",
+                "text": "请求保持无状态",
+                "score": 5,
+                "required": True,
+            },
+        ],
+    }
+
+    service.score(request)
+    assert len(calls) == 2
+    assert all(call["documents"] for call in calls)
+
+    service.score(request)
+    assert len(calls) == 4
+    assert {call["query"] for call in calls} == {
+        "资源使用 URI 标识",
+        "请求保持无状态",
+    }
 
 
 def test_remote_pair_scorer_integrates_with_code_scoring():

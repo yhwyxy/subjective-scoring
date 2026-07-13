@@ -85,6 +85,18 @@ class CohereRerankerPairScorer:
         if self._owns_client:
             self._client.close()
 
+    def score_documents(self, query: str, documents: Sequence[str]) -> list[float]:
+        """用一次 Cohere `/rerank` 请求评分同一 query 下的全部 documents。"""
+
+        if not isinstance(query, str):
+            raise ValueError("query must be a string")
+        values = list(documents)
+        if not values:
+            return []
+        if any(not isinstance(document, str) for document in values):
+            raise ValueError("document values must be strings")
+        return self._score_query(query, values)
+
     def score_pairs(self, pairs: Sequence[tuple[str, str]]) -> list[float]:
         if not pairs:
             return []

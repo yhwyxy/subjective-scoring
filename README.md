@@ -156,6 +156,8 @@ service = SubjectiveScoringService(
 
 默认还会使用标准答案验证 required / critical 评分点。如果标准答案本身无法可靠支持评分点，结果会标记 `rubric_self_check_failed` 并进入人工复核。支持阈值按本地 CrossEncoder、云端 Reranker 和词法回退分别配置；显式设置 `support` 时仍可统一覆盖所有后端。
 
+标准答案证据匹配结果会在 `TextRerankerScorer` 实例内按题目内容缓存，默认最多保存 256 项；可通过 `reference_cache_size=0` 关闭。缓存只保存模型相关度，不缓存学生答案或最终得分。
+
 评分点应保持原子化：一项只描述一个可独立验证的结论。例如 REST 的资源导向、HTTP 方法和无状态应拆成三个评分点，而不是合成一个复合评分点。
 
 ## 分数校准与诊断
@@ -180,6 +182,8 @@ service = SubjectiveScoringService(
 ## 云端 Reranker
 
 无法下载或运行本地 CrossEncoder 时，可以注入兼容 Cohere `/rerank` 协议的云端服务。URL、API Key 和模型 ID 应由应用环境提供，不要写入库源码或提交到 Git。
+
+文本局部证据评分会把“评分点”作为 query，将该评分点对应的全部候选语句作为 documents 一次提交。远程请求数因此由评分点数量决定，而不会随单句、双句和三句候选数量线性增长；首次评分会合并学生答案与标准答案候选，后续相同评分表直接复用标准答案缓存。
 
 ```python
 import os
