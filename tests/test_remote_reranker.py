@@ -369,7 +369,7 @@ def test_remote_pair_scorer_integrates_with_subjective_service():
     def handler(request: httpx.Request) -> httpx.Response:
         payload = json.loads(request.content)
         calls.append(payload)
-        relevance = 0.8 if payload["query"] == "point one" else 0.02
+        relevance = 1.0 if payload["query"] == "point one" else 0.02
         return httpx.Response(
             200,
             json={
@@ -400,9 +400,9 @@ def test_remote_pair_scorer_integrates_with_subjective_service():
 
     assert len(calls) == 2
     assert {call["query"] for call in calls} == {"point one", "point two"}
-    assert result.score == 5.0
+    assert result.score == 4.2
     assert result.track == "TextRerankerScorer"
-    assert "原始相关度 0.80；校准覆盖度 1.00" in result.matched_points[0].reason
+    assert "原始相关度 1.00；校准覆盖度 0.85" in result.matched_points[0].reason
 
 
 def test_text_evidence_batching_is_bounded_by_point_count_and_caches_reference():

@@ -23,7 +23,15 @@ def test_calibrator_rejects_non_monotonic_points():
 def test_remote_and_injected_backends_use_distinct_profiles():
     remote = default_calibrator_for_backend("cohere:model")
     injected = default_calibrator_for_backend("injected")
-    assert remote.calibrate(0.2) > injected.calibrate(0.2)
+    assert remote.calibrate(0.2) != injected.calibrate(0.2)
+
+
+def test_remote_profile_uses_exam_system_validated_curve():
+    remote = default_calibrator_for_backend("cohere:model")
+
+    assert remote.points == ((0.0, 0.0), (0.9, 0.5), (1.0, 0.85))
+    assert remote.calibrate(0.9) == pytest.approx(0.5)
+    assert remote.calibrate(1.0) == pytest.approx(0.85)
 
 
 def test_request_points_override_backend_profile_without_mutating_default():

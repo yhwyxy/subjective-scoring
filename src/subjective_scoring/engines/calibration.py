@@ -59,8 +59,8 @@ LOCAL_CROSS_ENCODER_CALIBRATOR = PiecewiseLinearCalibrator(
     name="local_cross_encoder_v1",
 )
 REMOTE_RERANKER_CALIBRATOR = PiecewiseLinearCalibrator(
-    ((0.0, 0.0), (0.02, 0.10), (0.08, 0.55), (0.20, 0.80), (0.45, 1.0), (1.0, 1.0)),
-    name="remote_reranker_v1",
+    ((0.0, 0.0), (0.9, 0.5), (1.0, 0.85)),
+    name="remote_reranker_v2",
 )
 
 
