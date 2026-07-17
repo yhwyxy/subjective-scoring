@@ -328,7 +328,7 @@ def test_text_evidence_batching_is_bounded_by_point_count_and_caches_reference()
         "max_score": 10,
         "scoring_mode": "text",
         "reference_answer": "资源使用 URI 标识。请求保持无状态。",
-        "student_answer": "资源使用 URI 标识。请求保持无状态。",
+        "student_answer": "用 URI 标识资源，每个请求都应自包含。",
         "scoring_points": [
             {
                 "id": "resource",

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+import unicodedata
 from collections import OrderedDict
 from collections.abc import Sequence
 from dataclasses import dataclass, field
@@ -31,6 +32,29 @@ from subjective_scoring.models import (
 )
 
 _DEFAULT_MATCH_THRESHOLD = 0.55
+_EXACT_MATCH_WHITESPACE_RE = re.compile(r"\s+")
+_EXACT_MATCH_PUNCTUATION = str.maketrans(
+    {
+        "，": ",",
+        "。": ".",
+        "、": ",",
+        "；": ";",
+        "：": ":",
+        "！": "!",
+        "？": "?",
+        "“": '"',
+        "”": '"',
+        "‘": "'",
+        "’": "'",
+        "（": "(",
+        "）": ")",
+        "【": "[",
+        "】": "]",
+        "…": "...",
+        "—": "-",
+        "–": "-",
+    }
+)
 _NEGATION_RE = re.compile(
     r"(不|没|无|非|未|并非|无法|不能|不会|不可|没有|不是|并非是|never|not|no|without|cannot|can't|won't)",
     re.IGNORECASE,
@@ -53,6 +77,12 @@ _DIRECTION_PAIRS = (
     ("升序", "降序"),
     ("正向", "反向"),
 )
+
+
+def _normalize_exact_match_text(text: str) -> str:
+    normalized = unicodedata.normalize("NFKC", str(text or ""))
+    normalized = normalized.casefold().translate(_EXACT_MATCH_PUNCTUATION)
+    return _EXACT_MATCH_WHITESPACE_RE.sub(" ", normalized).strip()
 _ANTONYM_PAIRS = (
     ("正确", "错误"),
     ("成功", "失败"),
@@ -541,8 +571,58 @@ class TextRerankerScorer:
                 self._reference_match_cache.popitem(last=False)
 
     def score(self, request: ScoringRequest) -> IntermediateScoreResult:
+        raw_student = request.student_answer or ""
+        reference = request.reference_answer or ""
+        if not raw_student.strip():
+            return IntermediateScoreResult(
+                scorer=self.name,
+                scoring_mode=ScoringMode.TEXT,
+                score=0.0,
+                max_score=request.max_score,
+                confidence=1.0,
+                metadata={
+                    "model": None,
+                    "parser": None,
+                    "decision": "auto_zero",
+                    "decision_reason": "blank_answer",
+                    "deterministic": True,
+                    "point_count": len(request.scoring_points),
+                    "relation_counts": {
+                        "supported": 0,
+                        "contradicted": 0,
+                        "unknown": 0,
+                    },
+                },
+            )
+
+        normalized_reference = _normalize_exact_match_text(reference)
+        if (
+            normalized_reference
+            and _normalize_exact_match_text(raw_student) == normalized_reference
+        ):
+            return IntermediateScoreResult(
+                scorer=self.name,
+                scoring_mode=ScoringMode.TEXT,
+                score=request.max_score,
+                max_score=request.max_score,
+                confidence=1.0,
+                metadata={
+                    "model": None,
+                    "parser": None,
+                    "decision": "auto_score",
+                    "decision_reason": "exact_reference_match",
+                    "deterministic": True,
+                    "point_count": len(request.scoring_points),
+                    "relation_counts": {
+                        "supported": len(request.scoring_points),
+                        "contradicted": 0,
+                        "unknown": 0,
+                    },
+                },
+            )
+
         points, warnings, force_review = self.point_resolver.resolve(request)
-        student = (request.student_answer or "").strip()
+        student = raw_student.strip()
         precision = request.scoring_config.score_precision
         relation_options = request.scoring_config.text_relation_thresholds
         conflict_threshold = relation_options.conflict
@@ -569,7 +649,7 @@ class TextRerankerScorer:
 
         support_threshold = self._support_threshold_for_backend(request, backend_name)
         calibrator = self.calibrator or default_calibrator_for_backend(backend_name)
-        reference = (request.reference_answer or "").strip()
+        reference = reference.strip()
         reference_matches: list[PointEvidenceMatch] | None = None
         reference_cache_hit = False
         if relation_options.validate_reference_points and reference:
@@ -860,14 +940,6 @@ class TextRerankerScorer:
             final_score = 0.0
             force_review = True
             decision_reason = decision_reason or "all_points_contradicted"
-        if not student:
-            final_score = 0.0
-            provisional_score = 0.0
-            confidence = 0.0
-            force_review = True
-            warnings.append("学生答案为空")
-            decision_reason = "empty_answer"
-
         if decision_reason is None:
             if final_score <= 0.0:
                 decision_reason = "no_supported_points"

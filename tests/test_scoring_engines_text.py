@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import pytest
+
 from subjective_scoring import PointRelation, ScoringMode, ScoringRequest
 from subjective_scoring.engines import RuleInterceptor, TextRerankerScorer
 
@@ -316,7 +318,7 @@ def test_full_reference_fallback_forces_review():
         _req(
             scoring_points=[],
             reference_answer="完整标准答案内容",
-            student_answer="完整标准答案内容",
+            student_answer="完整标准答案内容的同义表达",
         )
     )
     assert result.force_manual_review is True
@@ -324,11 +326,64 @@ def test_full_reference_fallback_forces_review():
     assert result.score == 8.0
 
 
-def test_empty_student_answer():
-    scorer = TextRerankerScorer(pair_scorer=lambda s, p: 1.0, allow_model_load=False)
-    result = scorer.score(_req(student_answer=""))
+@pytest.mark.parametrize("answer", ["", "   ", "\n\t", "　"])
+def test_blank_answer_scores_zero_without_calling_pair_scorer(answer: str):
+    def fail_if_called(student: str, point: str) -> float:
+        raise AssertionError("blank answers must not call the pair scorer")
+
+    scorer = TextRerankerScorer(pair_scorer=fail_if_called, allow_model_load=False)
+    result = scorer.score(_req(student_answer=answer))
+
     assert result.score == 0.0
-    assert result.force_manual_review is True
+    assert result.confidence == 1.0
+    assert result.force_manual_review is False
+    assert result.metadata["decision_reason"] == "blank_answer"
+
+
+def test_normalized_exact_reference_scores_full_without_calling_pair_scorer():
+    def fail_if_called(student: str, point: str) -> float:
+        raise AssertionError("exact answers must not call the pair scorer")
+
+    scorer = TextRerankerScorer(pair_scorer=fail_if_called, allow_model_load=False)
+    result = scorer.score(
+        _req(
+            reference_answer="HTTP 状态：200，表示 OK。",
+            student_answer="  http   状态:200,表示 ok.\n",
+        )
+    )
+
+    assert result.score == result.max_score == 10.0
+    assert result.confidence == 1.0
+    assert result.force_manual_review is False
+    assert result.metadata["decision_reason"] == "exact_reference_match"
+
+
+@pytest.mark.parametrize(
+    ("reference", "student"),
+    [
+        ("缓存时间是 30 秒", "缓存时间是 60 秒"),
+        ("应该启用缓存", "不应该启用缓存"),
+        ("salary >= 3000", "salary > 3000"),
+        ("items[i++]", "items[i+1]"),
+    ],
+)
+def test_exact_match_normalization_preserves_semantic_tokens(
+    reference: str,
+    student: str,
+):
+    calls: list[tuple[str, str]] = []
+
+    def pair_scorer(left: str, right: str) -> float:
+        calls.append((left, right))
+        return 0.0
+
+    scorer = TextRerankerScorer(pair_scorer=pair_scorer, allow_model_load=False)
+    result = scorer.score(
+        _req(reference_answer=reference, student_answer=student)
+    )
+
+    assert calls
+    assert result.metadata["decision_reason"] != "exact_reference_match"
 
 
 def test_rule_interceptor_number_mismatch():
