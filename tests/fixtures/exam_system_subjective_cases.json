@@ -1,0 +1,617 @@
+{
+  "schema_version": 1,
+  "source": "examSystem-18-papers-subjective-only",
+  "cases": [
+    {
+      "paper_id": "instrumentation",
+      "question_id": "instrumentation-q41",
+      "question_type": "short_answer",
+      "student_answer": "不了解该题，答案与题意无关。",
+      "reference_answer": "零位误差就是输入标准信号零时,此时设备显示不为零的值。\n测量范围指仪器所能够测量的最小尺寸与最大尺寸之间的范围",
+      "scoring_points": [],
+      "max_score": 10.0,
+      "expected_score": 0.0
+    },
+    {
+      "paper_id": "instrumentation",
+      "question_id": "instrumentation-q42",
+      "question_type": "short_answer",
+      "student_answer": "引用误差指测量的绝对误差与仪表的满量程值之比;\n绝对误差指测量值与真实值之差。",
+      "reference_answer": "引用误差指测量的绝对误差与仪表的满量程值之比;\n绝对误差指测量值与真实值之差。",
+      "scoring_points": [],
+      "max_score": 10.0,
+      "expected_score": 10.0
+    },
+    {
+      "paper_id": "metallurgy",
+      "question_id": "metallurgy-q41",
+      "question_type": "short_answer",
+      "student_answer": "不了解该题，答案与题意无关。",
+      "reference_answer": "1、均匀钢水成分; 2、均匀钢水温度; 3、促使夹杂物碰撞上浮;",
+      "scoring_points": [],
+      "max_score": 10.0,
+      "expected_score": 0.0
+    },
+    {
+      "paper_id": "metallurgy",
+      "question_id": "metallurgy-q42",
+      "question_type": "short_answer",
+      "student_answer": "绝热保温,防止钢液面结壳;隔绝空气,防止二次氧化; 吸收钢水中夹杂物; 改善润滑及结晶器传热",
+      "reference_answer": "绝热保温,防止钢液面结壳;隔绝空气,防止二次氧化; 吸收钢水中夹杂物; 改善润滑及结晶器传热",
+      "scoring_points": [],
+      "max_score": 10.0,
+      "expected_score": 10.0
+    },
+    {
+      "paper_id": "metallurgy",
+      "question_id": "metallurgy-q43",
+      "question_type": "short_answer",
+      "student_answer": "•   钢水总重量为:100 吨(t)\n•   硅锰合金(Si:17%,Mn:65%)、硅铁(Si:72%)\n•   硅的收得率80%,锰的收得率92%\n•   电炉/转炉出钢成分为[M",
+      "reference_answer": "•   钢水总重量为:100 吨(t)\n•   硅锰合金(Si:17%,Mn:65%)、硅铁(Si:72%)\n•   硅的收得率80%,锰的收得率92%\n•   电炉/转炉出钢成分为[Mn]:0.05% ,[Si]:0.00%\n•   合金化目标: [Mn]:0.50% ,[Si]:0.18%\n计算精炼过程硅锰、硅铁合金的加入量。(保留整数位)\n753KG/135KG。",
+      "scoring_points": [],
+      "max_score": 20.0,
+      "expected_score": 10.0
+    },
+    {
+      "paper_id": "chemical-analysis",
+      "question_id": "chemical-analysis-q41",
+      "question_type": "short_answer",
+      "student_answer": "不了解该题，答案与题意无关。",
+      "reference_answer": "滴定分析是基于物质相互反应完全时,其物质的量满足一定的化学计量关系,根据消耗滴定剂的量与被测物质的量满足摩尔比关系,计算被测物质的含量。",
+      "scoring_points": [],
+      "max_score": 10.0,
+      "expected_score": 0.0
+    },
+    {
+      "paper_id": "chemical-analysis",
+      "question_id": "chemical-analysis-q42",
+      "question_type": "short_answer",
+      "student_answer": "纯H2SO4与水反应时放出大量热,故在配制稀H2SO4时应将浓H2SO4徐徐加入水中并加以搅拌以散热,切不可反向进行,否则放出大量的热,水迅速蒸发飞溅带出浓H2SO4伤人。",
+      "reference_answer": "纯H2SO4与水反应时放出大量热,故在配制稀H2SO4时应将浓H2SO4徐徐加入水中并加以搅拌以散热,切不可反向进行,否则放出大量的热,水迅速蒸发飞溅带出浓H2SO4伤人。",
+      "scoring_points": [],
+      "max_score": 10.0,
+      "expected_score": 10.0
+    },
+    {
+      "paper_id": "chemical-analysis",
+      "question_id": "chemical-analysis-q43",
+      "question_type": "short_answer",
+      "student_answer": "12HCl+ Na2CO3→2NaCl+H2O+CO2↑\n2\n[OLE: E",
+      "reference_answer": "12HCl+ Na2CO3→2NaCl+H2O+CO2↑\n2\n[OLE: Equation.3]\n该盐酸溶液的物质的量浓度为0.2000 mol/L 。",
+      "scoring_points": [],
+      "max_score": 20.0,
+      "expected_score": 10.0
+    },
+    {
+      "paper_id": "chemical-engineering",
+      "question_id": "chemical-engineering-q41",
+      "question_type": "short_answer",
+      "student_answer": "不了解该题，答案与题意无关。",
+      "reference_answer": "控制反应的温度,压力,反应时间在适宜的范围之内,恰当的催化剂。",
+      "scoring_points": [],
+      "max_score": 10.0,
+      "expected_score": 0.0
+    },
+    {
+      "paper_id": "chemical-engineering",
+      "question_id": "chemical-engineering-q42",
+      "question_type": "short_answer",
+      "student_answer": "影响氧化还原反应速率的主要因素有反应物的浓度,温度,催化剂,诱导作用;\n增加反应物浓度,或升高溶液温度,或加入正催化剂,或有诱导反应存在等都可加速反应的完成。",
+      "reference_answer": "影响氧化还原反应速率的主要因素有反应物的浓度,温度,催化剂,诱导作用;\n增加反应物浓度,或升高溶液温度,或加入正催化剂,或有诱导反应存在等都可加速反应的完成。",
+      "scoring_points": [],
+      "max_score": 10.0,
+      "expected_score": 10.0
+    },
+    {
+      "paper_id": "chemical-engineering",
+      "question_id": "chemical-engineering-q43",
+      "question_type": "short_answer",
+      "student_answer": "催化剂在工业生产上可以加快主反应速度、减少副反应。使反应定向进行,缓",
+      "reference_answer": "催化剂在工业生产上可以加快主反应速度、减少副反应。使反应定向进行,缓和反应条件,降低对设备的要求,从而提高设备的生产能力和降低产品成本。",
+      "scoring_points": [],
+      "max_score": 10.0,
+      "expected_score": 5.0
+    },
+    {
+      "paper_id": "chemical-engineering",
+      "question_id": "chemical-engineering-q44",
+      "question_type": "short_answer",
+      "student_answer": "不了解该题，答案与题意无关。",
+      "reference_answer": "选用Ba(OH)2试剂。\n将四种未知试剂配成溶液,分装在四个试管中,分别加入Ba(OH)2溶液并加热\n(1)出现白色沉淀,产生刺激性气味气体的是硫酸铵;\n(2)没有白色沉淀,但产生刺激性气味气体的是氯化铵;\n(3)只有白色沉淀的物质是硫酸钠。\n(4)没有白色沉淀,也不产生刺激性气味气体的是氯化钠。",
+      "scoring_points": [],
+      "max_score": 10.0,
+      "expected_score": 0.0
+    },
+    {
+      "paper_id": "safety-management",
+      "question_id": "safety-management-q41",
+      "question_type": "short_answer",
+      "student_answer": "不了解该题，答案与题意无关。",
+      "reference_answer": "应掌握安全意识、懂得安全知识、熟知有关安全的规章制度和操作规程、掌握安全技能,遵守和维护公共秩序、培养和提高紧急避险能力",
+      "scoring_points": [],
+      "max_score": 10.0,
+      "expected_score": 0.0
+    },
+    {
+      "paper_id": "safety-management",
+      "question_id": "safety-management-q42",
+      "question_type": "short_answer",
+      "student_answer": "领导和管理人员的(违章指挥);操作人员的(违规操作)和违反劳动纪律,统称为“三违”行为。",
+      "reference_answer": "领导和管理人员的(违章指挥);操作人员的(违规操作)和违反劳动纪律,统称为“三违”行为。",
+      "scoring_points": [],
+      "max_score": 10.0,
+      "expected_score": 10.0
+    },
+    {
+      "paper_id": "safety-management",
+      "question_id": "safety-management-q43",
+      "question_type": "short_answer",
+      "student_answer": "知情权,建议权,批评、检举、控告权,拒绝权,紧急避险权,要求赔偿权,获得",
+      "reference_answer": "知情权,建议权,批评、检举、控告权,拒绝权,紧急避险权,要求赔偿权,获得符合国家标准或者行业标准劳动保护用品的权利,获得安全生产教育和培训的权利。",
+      "scoring_points": [],
+      "max_score": 20.0,
+      "expected_score": 10.0
+    },
+    {
+      "paper_id": "mechanical",
+      "question_id": "mechanical-q41",
+      "question_type": "short_answer",
+      "student_answer": "不了解该题，答案与题意无关。",
+      "reference_answer": "主视图    俯视图    左视图\n长对正-----主视图与俯视图相应投影长度相等;\n高平齐-----主视图与左视图相应投影高度相等;\n宽相等-----俯视图与左视图相应投影宽度相等",
+      "scoring_points": [],
+      "max_score": 9.0,
+      "expected_score": 0.0
+    },
+    {
+      "paper_id": "mechanical",
+      "question_id": "mechanical-q42",
+      "question_type": "short_answer",
+      "student_answer": "铰链四杆机构一般分三种基本类型:曲柄摇杆机构、双曲柄机构、双摇杆机构。",
+      "reference_answer": "铰链四杆机构一般分三种基本类型:曲柄摇杆机构、双曲柄机构、双摇杆机构。",
+      "scoring_points": [],
+      "max_score": 6.0,
+      "expected_score": 6.0
+    },
+    {
+      "paper_id": "mechanical",
+      "question_id": "mechanical-q43",
+      "question_type": "short_answer",
+      "student_answer": "i=z2/z1=50/30=5/3\ni=n1/n2    ",
+      "reference_answer": "i=z2/z1=50/30=5/3\ni=n1/n2     n2=n1/i=1000/(5/3)=`600r/min",
+      "scoring_points": [],
+      "max_score": 10.0,
+      "expected_score": 5.0
+    },
+    {
+      "paper_id": "mechanical",
+      "question_id": "mechanical-q44",
+      "question_type": "short_answer",
+      "student_answer": "不了解该题，答案与题意无关。",
+      "reference_answer": "换向阀常用的控制方式:人力控制、机械控制、电气控制、直接压力控制、先导控制;",
+      "scoring_points": [],
+      "max_score": 15.0,
+      "expected_score": 0.0
+    },
+    {
+      "paper_id": "materials",
+      "question_id": "materials-q41",
+      "question_type": "short_answer",
+      "student_answer": "不了解该题，答案与题意无关。",
+      "reference_answer": "Cosβ=√2/2,β=45°",
+      "scoring_points": [],
+      "max_score": 10.0,
+      "expected_score": 0.0
+    },
+    {
+      "paper_id": "materials",
+      "question_id": "materials-q42",
+      "question_type": "short_answer",
+      "student_answer": "(1)钢的淬透性是指在规定条件下,决定钢材淬硬深度和硬度分布的特性,也就是钢在淬火时能获得马氏体的能力。\n(2)提高淬透性的合金元素主要有:B、Mn、Mo、Cr、Si、Ni",
+      "reference_answer": "(1)钢的淬透性是指在规定条件下,决定钢材淬硬深度和硬度分布的特性,也就是钢在淬火时能获得马氏体的能力。\n(2)提高淬透性的合金元素主要有:B、Mn、Mo、Cr、Si、Ni",
+      "scoring_points": [],
+      "max_score": 20.0,
+      "expected_score": 20.0
+    },
+    {
+      "paper_id": "materials",
+      "question_id": "materials-q43",
+      "question_type": "short_answer",
+      "student_answer": "(1)过冷度是理论结晶温度和实际结晶温度的差值,即△t=tR-",
+      "reference_answer": "(1)过冷度是理论结晶温度和实际结晶温度的差值,即△t=tR-t;\n(2)过冷度越大,结晶趋势越大,结晶速度越快,晶粒越细小。",
+      "scoring_points": [],
+      "max_score": 10.0,
+      "expected_score": 5.0
+    },
+    {
+      "paper_id": "legal",
+      "question_id": "legal-q35",
+      "question_type": "essay",
+      "student_answer": "不了解该题，答案与题意无关。",
+      "reference_answer": "甲、丙之间于2月8日形成的房屋买卖合同,该合同为有效合同。尽管甲已就该房与乙签订了合同,但甲丙的行为不属于违背公序良俗的行为,也不违反法律、行政法规的强制性规定,不存在无效的因素。丙的行为仅为单纯的知情,甲、丙之间的合同不属于恶意串通行为,因其不以损害乙的权利为目的。\n3.2月12日,甲、乙之间修改合同的行为,该行为有效,其性质属于双方变更合同。双方受变更后的合同的约束。",
+      "scoring_points": [],
+      "max_score": 5.0,
+      "expected_score": 0.0
+    },
+    {
+      "paper_id": "legal",
+      "question_id": "legal-q36",
+      "question_type": "essay",
+      "student_answer": "乙与甲通过协商变更了合同,且甲、丙之间的合同有效且已经办理了物权变动的手续,故乙关于确认甲、丙之间合同无效、由甲交付01号房的请求不能得到支持。但是,乙可以请求甲承担违约责任,乙同意变更合同不等于放弃追索甲在01号房屋买卖合同项下的违约责任。",
+      "reference_answer": "乙与甲通过协商变更了合同,且甲、丙之间的合同有效且已经办理了物权变动的手续,故乙关于确认甲、丙之间合同无效、由甲交付01号房的请求不能得到支持。但是,乙可以请求甲承担违约责任,乙同意变更合同不等于放弃追索甲在01号房屋买卖合同项下的违约责任。",
+      "scoring_points": [],
+      "max_score": 5.0,
+      "expected_score": 5.0
+    },
+    {
+      "paper_id": "legal",
+      "question_id": "legal-q37",
+      "question_type": "essay",
+      "student_answer": "乙可请求解除合同,甲应将收受的购房款本金及其利息返还给乙。因政策限购属于当事",
+      "reference_answer": "乙可请求解除合同,甲应将收受的购房款本金及其利息返还给乙。因政策限购属于当事人无法预见的情形,且合同出现了履行不能的情形,乙有权解除合同,且无须承担责任。",
+      "scoring_points": [],
+      "max_score": 5.0,
+      "expected_score": 2.5
+    },
+    {
+      "paper_id": "legal",
+      "question_id": "legal-q38",
+      "question_type": "essay",
+      "student_answer": "不了解该题，答案与题意无关。",
+      "reference_answer": "应当由丙和A公司承担。张某是受雇人,其执行职务的行为,由A公司承担侵权赔偿责任。丙聘请没有装修资质的A公司进屋装修,具有过错,也应对丁的损失承担赔偿责任。",
+      "scoring_points": [],
+      "max_score": 4.0,
+      "expected_score": 0.0
+    },
+    {
+      "paper_id": "legal",
+      "question_id": "legal-q39",
+      "question_type": "essay",
+      "student_answer": "B公司承担。",
+      "reference_answer": "B公司承担。",
+      "scoring_points": [],
+      "max_score": 4.0,
+      "expected_score": 4.0
+    },
+    {
+      "paper_id": "welding",
+      "question_id": "welding-q41",
+      "question_type": "short_answer",
+      "student_answer": "不了解该题，答案与题意无关。",
+      "reference_answer": "1.根据焊件木材的类型选用焊条\n2.根据焊缝的使用环境选用焊条\n3.根据焊条的抗裂性要求选用焊条\n4.根据焊接工艺要求选用焊条\n5.根据设备和施工条件选用焊条\n6.根据经济性选用焊条",
+      "scoring_points": [],
+      "max_score": 13.0,
+      "expected_score": 0.0
+    },
+    {
+      "paper_id": "welding",
+      "question_id": "welding-q42",
+      "question_type": "short_answer",
+      "student_answer": "未焊透、裂纹、夹渣、气孔、咬边、焊瘤、烧穿",
+      "reference_answer": "未焊透、裂纹、夹渣、气孔、咬边、焊瘤、烧穿",
+      "scoring_points": [],
+      "max_score": 7.0,
+      "expected_score": 7.0
+    },
+    {
+      "paper_id": "welding",
+      "question_id": "welding-q43",
+      "question_type": "short_answer",
+      "student_answer": "1.整体高温回火\n2.局部高温回火\n3",
+      "reference_answer": "1.整体高温回火\n2.局部高温回火\n3.机械拉伸法\n4.温差拉伸法\n5.振动法",
+      "scoring_points": [],
+      "max_score": 10.0,
+      "expected_score": 5.0
+    },
+    {
+      "paper_id": "welding",
+      "question_id": "welding-q44",
+      "question_type": "short_answer",
+      "student_answer": "不了解该题，答案与题意无关。",
+      "reference_answer": "E表示焊条;43表示熔敷金属抗拉强度的最小值430Mpa;1表示焊条使用于全位置焊接;5表示焊条药皮为低氢纳型,采用直流反接电源",
+      "scoring_points": [],
+      "max_score": 10.0,
+      "expected_score": 0.0
+    },
+    {
+      "paper_id": "logistics",
+      "question_id": "logistics-q51",
+      "question_type": "short_answer",
+      "student_answer": "HELLO!CHIEF OFFICER!I’M FOREMAN.IF IT IS RAINING, PLEASE CLOSE HATCH COVER AND STOP LOADING IN ORDER TO PROTECT THE PRODUCT.",
+      "reference_answer": "HELLO!CHIEF OFFICER!I’M FOREMAN.IF IT IS RAINING, PLEASE CLOSE HATCH COVER AND STOP LOADING IN ORDER TO PROTECT THE PRODUCT.",
+      "scoring_points": [],
+      "max_score": 10.0,
+      "expected_score": 10.0
+    },
+    {
+      "paper_id": "logistics",
+      "question_id": "logistics-q52",
+      "question_type": "short_answer",
+      "student_answer": "CAPTAIN! IN ORDER TO KEEP SHIP’S BALANCE,  WE WI",
+      "reference_answer": "CAPTAIN! IN ORDER TO KEEP SHIP’S BALANCE,  WE WILL SHIFT TO HOLD NO.3&5,PLEASE OPEN HATCH COVER.",
+      "scoring_points": [],
+      "max_score": 10.0,
+      "expected_score": 5.0
+    },
+    {
+      "paper_id": "environmental",
+      "question_id": "environmental-q41",
+      "question_type": "short_answer",
+      "student_answer": "不了解该题，答案与题意无关。",
+      "reference_answer": "大气污染、水污染、土壤污染、食品污染、放射性污染、噪音污染",
+      "scoring_points": [],
+      "max_score": 10.0,
+      "expected_score": 0.0
+    },
+    {
+      "paper_id": "environmental",
+      "question_id": "environmental-q42",
+      "question_type": "short_answer",
+      "student_answer": "大气、水体、土壤、生物、噪声",
+      "reference_answer": "大气、水体、土壤、生物、噪声",
+      "scoring_points": [],
+      "max_score": 10.0,
+      "expected_score": 10.0
+    },
+    {
+      "paper_id": "environmental",
+      "question_id": "environmental-q43",
+      "question_type": "short_answer",
+      "student_answer": "(1)沉淀物过滤法;(2)硬水软化法;(3)超过滤法;(4)蒸馏法;(5)紫外线消毒法;(6)生物化学法;(7)正向渗透法(渗透法)",
+      "reference_answer": "(1)沉淀物过滤法;(2)硬水软化法;(3)超过滤法;(4)蒸馏法;(5)紫外线消毒法;(6)生物化学法;(7)正向渗透法(渗透法);(8)物理化学法;(9)自然处理法;(10)去离子法;(11)反渗透法;(12) 声波处理法;(13)离子交换法;(14)逆渗透法",
+      "scoring_points": [],
+      "max_score": 10.0,
+      "expected_score": 5.0
+    },
+    {
+      "paper_id": "environmental",
+      "question_id": "environmental-q44",
+      "question_type": "short_answer",
+      "student_answer": "不了解该题，答案与题意无关。",
+      "reference_answer": "(1)超低排放;(2)清江行动;(3)钢渣清理;(4)除尘改造;(5)棚化改造;(5)清污分流(雨污分流);(6)噪声整理;(7)209号文件;(8)脱硫脱销(烟气脱硫);(9)危废库建设;(10)煤气均压煤气回收改造;(11)皮带转运站通廊封闭;(12)花园式工厂改造等;(13)除尘灰气力输送等。",
+      "scoring_points": [],
+      "max_score": 10.0,
+      "expected_score": 0.0
+    },
+    {
+      "paper_id": "electrical",
+      "question_id": "electrical-q41",
+      "question_type": "short_answer",
+      "student_answer": "不了解该题，答案与题意无关。",
+      "reference_answer": "国外知名品牌:西门子、ABB、施耐德、欧姆龙、TMEIC、艾默生、横河等\n国内知名品牌:浙江中控、江苏科远等",
+      "scoring_points": [],
+      "max_score": 10.0,
+      "expected_score": 0.0
+    },
+    {
+      "paper_id": "electrical",
+      "question_id": "electrical-q42",
+      "question_type": "short_answer",
+      "student_answer": "automation:自动化;electrical:电气的;technology:技术;intelligent:智能的;\nAI:人工智能(研究、开发用于模拟、延伸和扩展人的智能的理论、方法、技术及应用系统的一门新的技术科学。)\nVR:虚拟现实技术(囊括计算机、电子信息、仿真技术于一体,其基本实现方式是计算机模拟虚拟环境从而给人以环境沉浸感。)",
+      "reference_answer": "automation:自动化;electrical:电气的;technology:技术;intelligent:智能的;\nAI:人工智能(研究、开发用于模拟、延伸和扩展人的智能的理论、方法、技术及应用系统的一门新的技术科学。)\nVR:虚拟现实技术(囊括计算机、电子信息、仿真技术于一体,其基本实现方式是计算机模拟虚拟环境从而给人以环境沉浸感。)",
+      "scoring_points": [],
+      "max_score": 10.0,
+      "expected_score": 10.0
+    },
+    {
+      "paper_id": "electrical",
+      "question_id": "electrical-q43",
+      "question_type": "short_answer",
+      "student_answer": "答案各",
+      "reference_answer": "答案各自发挥",
+      "scoring_points": [],
+      "max_score": 20.0,
+      "expected_score": 10.0
+    },
+    {
+      "paper_id": "mineral-processing",
+      "question_id": "mineral-processing-q41",
+      "question_type": "short_answer",
+      "student_answer": "不了解该题，答案与题意无关。",
+      "reference_answer": "1)实验室试验 2)中间试验  3)工业试验。",
+      "scoring_points": [],
+      "max_score": 10.0,
+      "expected_score": 0.0
+    },
+    {
+      "paper_id": "mineral-processing",
+      "question_id": "mineral-processing-q42",
+      "question_type": "short_answer",
+      "student_answer": "吨矿产气量=35*24*28*1000/365000=75.22kg/t",
+      "reference_answer": "吨矿产气量=35*24*28*1000/365000=75.22kg/t",
+      "scoring_points": [],
+      "max_score": 10.0,
+      "expected_score": 10.0
+    },
+    {
+      "paper_id": "mineral-processing",
+      "question_id": "mineral-processing-q43",
+      "question_type": "short_answer",
+      "student_answer": "根据矿石中的各种矿物在各种溶剂中的溶解度和溶解速度不同,采用不同浓度的各种溶剂在不同条件下处",
+      "reference_answer": "根据矿石中的各种矿物在各种溶剂中的溶解度和溶解速度不同,采用不同浓度的各种溶剂在不同条件下处理所分析的矿样,即可使矿石中各种矿物分离,从而可测出试样中某种元素呈何种矿物存在和含量的多少。",
+      "scoring_points": [],
+      "max_score": 10.0,
+      "expected_score": 5.0
+    },
+    {
+      "paper_id": "mineral-processing",
+      "question_id": "mineral-processing-q44",
+      "question_type": "short_answer",
+      "student_answer": "不了解该题，答案与题意无关。",
+      "reference_answer": "(1)使物料粒度减小;\n(2)使有用矿物与脉石矿物充分单体解离。",
+      "scoring_points": [],
+      "max_score": 10.0,
+      "expected_score": 0.0
+    },
+    {
+      "paper_id": "energy-power",
+      "question_id": "energy-power-q41",
+      "question_type": "short_answer",
+      "student_answer": "不了解该题，答案与题意无关。",
+      "reference_answer": "给水泵——省煤器——汽包——下降管——水冷壁——汽包——(汽水分离)——过热器——过热器集箱",
+      "scoring_points": [],
+      "max_score": 10.0,
+      "expected_score": 0.0
+    },
+    {
+      "paper_id": "energy-power",
+      "question_id": "energy-power-q42",
+      "question_type": "short_answer",
+      "student_answer": "锅炉发生严重缺水时必须紧急停炉,而不允许往锅炉内补水。这主要是因为:当锅炉发生严重缺水时,汽包水位究竟低到什么程度是不知道的,可能汽包内已完全无水,或水冷壁已部 分烧干、过热。在这种情况下,如果强行往锅炉内补水,由于温差过大,会产生巨大的热应力,而使设备损坏。同时,水遇到灼热的金属表面,瞬间会蒸发大量蒸汽,使汽压突然升高,甚至造成爆管或更严重的爆炸事故。因此,发生严重缺水时,必须严格地按照规程的规定去处理,决不允许盲目地上水。",
+      "reference_answer": "锅炉发生严重缺水时必须紧急停炉,而不允许往锅炉内补水。这主要是因为:当锅炉发生严重缺水时,汽包水位究竟低到什么程度是不知道的,可能汽包内已完全无水,或水冷壁已部 分烧干、过热。在这种情况下,如果强行往锅炉内补水,由于温差过大,会产生巨大的热应力,而使设备损坏。同时,水遇到灼热的金属表面,瞬间会蒸发大量蒸汽,使汽压突然升高,甚至造成爆管或更严重的爆炸事故。因此,发生严重缺水时,必须严格地按照规程的规定去处理,决不允许盲目地上水。",
+      "scoring_points": [],
+      "max_score": 20.0,
+      "expected_score": 20.0
+    },
+    {
+      "paper_id": "energy-power",
+      "question_id": "energy-power-q43",
+      "question_type": "short_answer",
+      "student_answer": "冷态启动;温态启动;",
+      "reference_answer": "冷态启动;温态启动;热态启动;极热态启动。",
+      "scoring_points": [],
+      "max_score": 10.0,
+      "expected_score": 5.0
+    },
+    {
+      "paper_id": "software-development",
+      "question_id": "software-development-q16",
+      "question_type": "short_answer",
+      "student_answer": "JavaScript：\nfor (var i = 0; i < 10; i++) {\n    if (i == 5) {\n        break;\n    }\n    // ……\n    for ",
+      "reference_answer": "JavaScript：\nfor (var i = 0; i < 10; i++) {\n    if (i == 5) {\n        break;\n    }\n    // ……\n    for (var j = 0; j < 10; j++) {\n        if (j < 9) {\n            continue;\n        }\n        // ……\n    }\n}",
+      "scoring_points": [],
+      "max_score": 10.0,
+      "expected_score": 5.0
+    },
+    {
+      "paper_id": "software-development",
+      "question_id": "software-development-q17",
+      "question_type": "short_answer",
+      "student_answer": "不了解该题，答案与题意无关。",
+      "reference_answer": "A、抽象：忽略与当前目标无关的方面，以便更充分地关注与当前目标有关的方面。\nB、继承：一种联结类的层次模型，允许和鼓励重用，提供明确表述共性的方法。\nC、封装：把过程和数据包围起来，对数据的访问只能通过已定义的界面。\nD、多态：允许不同类的对象对同一消息作出响应。",
+      "scoring_points": [],
+      "max_score": 10.0,
+      "expected_score": 0.0
+    },
+    {
+      "paper_id": "software-development",
+      "question_id": "software-development-q18",
+      "question_type": "short_answer",
+      "student_answer": "1、HTTP（超文本传输协议）用于在 Web 浏览器和网站服务器之间传递信息。\n2、HTTPS 采用安全套接字层，使传输数据更加安全。\n3、HTTPS 在 HTTP 的基础上增加 SSL/TLS 协议。\n4、使用 HTTPS 协议需要 CA 证书。",
+      "reference_answer": "1、HTTP（超文本传输协议）用于在 Web 浏览器和网站服务器之间传递信息。\n2、HTTPS 采用安全套接字层，使传输数据更加安全。\n3、HTTPS 在 HTTP 的基础上增加 SSL/TLS 协议。\n4、使用 HTTPS 协议需要 CA 证书。",
+      "scoring_points": [],
+      "max_score": 10.0,
+      "expected_score": 10.0
+    },
+    {
+      "paper_id": "software-development",
+      "question_id": "software-development-q19",
+      "question_type": "short_answer",
+      "student_answer": "观察法、体验法、问卷调查法、访",
+      "reference_answer": "观察法、体验法、问卷调查法、访谈法、单据分析法、报表分析法等。",
+      "scoring_points": [],
+      "max_score": 10.0,
+      "expected_score": 5.0
+    },
+    {
+      "paper_id": "software-development",
+      "question_id": "software-development-q20",
+      "question_type": "essay",
+      "student_answer": "不了解该题，答案与题意无关。",
+      "reference_answer": "SELECT emp_id, emp_name, dept_name FROM emp, dept WHERE salary > 3000 AND emp.dept_id = dept.dept_id;",
+      "scoring_points": [],
+      "max_score": 15.0,
+      "expected_score": 0.0
+    },
+    {
+      "paper_id": "software-development",
+      "question_id": "software-development-q21",
+      "question_type": "essay",
+      "student_answer": "JavaScript：\nfunction findIndex(array, item) {\n    return array.indexOf(item);\n}",
+      "reference_answer": "JavaScript：\nfunction findIndex(array, item) {\n    return array.indexOf(item);\n}",
+      "scoring_points": [],
+      "max_score": 15.0,
+      "expected_score": 15.0
+    },
+    {
+      "paper_id": "communications",
+      "question_id": "communications-q41",
+      "question_type": "short_answer",
+      "student_answer": "不了解该题，答案与题意无关。",
+      "reference_answer": "运算器、控制器、存储器、输入设备和输出设备",
+      "scoring_points": [],
+      "max_score": 10.0,
+      "expected_score": 0.0
+    },
+    {
+      "paper_id": "communications",
+      "question_id": "communications-q42",
+      "question_type": "short_answer",
+      "student_answer": "应用层、表示层、会话层、传输层、网络层、数据链路层、物理层",
+      "reference_answer": "应用层、表示层、会话层、传输层、网络层、数据链路层、物理层",
+      "scoring_points": [],
+      "max_score": 15.0,
+      "expected_score": 15.0
+    },
+    {
+      "paper_id": "communications",
+      "question_id": "communications-q43",
+      "question_type": "short_answer",
+      "student_answer": "23-telnet,53-dns,80-http,",
+      "reference_answer": "23-telnet,53-dns,80-http,443-https,3389-windows远程桌面",
+      "scoring_points": [],
+      "max_score": 15.0,
+      "expected_score": 7.5
+    },
+    {
+      "paper_id": "communications",
+      "question_id": "communications-q44",
+      "question_type": "short_answer",
+      "student_answer": "不了解该题，答案与题意无关。",
+      "reference_answer": "类别\n网段名\n起始可用地址\n结束可用地址\n掩码\nA\n10.10.0.0\n10.10.0.1\n10.10.0.254\nB\n172.16.0.1\n255.255.0.0\nC\n192.168.1.0\n255.255.255.0\n类别\n网段名\n起始可用地址\n结束可用地址\n掩码\nA\n10.10.0.0\n10.10.0.1\n10.10.0.254\n255.255.255.0\nB\n172.16.0.0\n172.16.0.1\n172.16.255.254\n255.255.0.0\nC\n192.168.1.0\n192.168.1.1\n192.168.1.254\n255.255.255.0\nPAGE  4",
+      "scoring_points": [],
+      "max_score": 10.0,
+      "expected_score": 0.0
+    },
+    {
+      "paper_id": "metal-materials",
+      "question_id": "metal-materials-q41",
+      "question_type": "short_answer",
+      "student_answer": "不了解该题，答案与题意无关。",
+      "reference_answer": "(1)加入Ti、V、W、Mo等强碳化物形成元素,细化晶粒;\n(2)提高回火稳定性,加入Ti、V等强碳化物形成元素和Si元素;\n(3)改善基体韧性,主要是加入Ni元素;\n(4)细化碳化物,如加入Cr、V等元素;\n(5)降低或消除钢的回火脆性,主要是Mo、W元素比较有效。",
+      "scoring_points": [],
+      "max_score": 10.0,
+      "expected_score": 0.0
+    },
+    {
+      "paper_id": "metal-materials",
+      "question_id": "metal-materials-q42",
+      "question_type": "short_answer",
+      "student_answer": "Q235-F:表示普通碳素结构钢,其屈服强度为235MPa,F表示是沸腾钢。\nKTZ450-06:表示珠光体基体的可锻铸铁,其表示最低抗拉强度为450MPa,最小伸长率为6%。\nH68:表示含铜68%的黄铜。\nLF5:表示防锈铝,其序数号为5。",
+      "reference_answer": "Q235-F:表示普通碳素结构钢,其屈服强度为235MPa,F表示是沸腾钢。\nKTZ450-06:表示珠光体基体的可锻铸铁,其表示最低抗拉强度为450MPa,最小伸长率为6%。\nH68:表示含铜68%的黄铜。\nLF5:表示防锈铝,其序数号为5。",
+      "scoring_points": [],
+      "max_score": 10.0,
+      "expected_score": 10.0
+    },
+    {
+      "paper_id": "metal-materials",
+      "question_id": "metal-materials-q43",
+      "question_type": "short_answer",
+      "student_answer": "基本相有:铁素体 奥氏体 渗碳体\n铁素体的强度和硬度不高,但具有良好的塑性和韧性。\n奥",
+      "reference_answer": "基本相有:铁素体 奥氏体 渗碳体\n铁素体的强度和硬度不高,但具有良好的塑性和韧性。\n奥氏体的硬度较低而塑性较高,易于锻压成型。\n渗碳体硬度很高而塑性和韧性几乎为零,脆性大。",
+      "scoring_points": [],
+      "max_score": 10.0,
+      "expected_score": 5.0
+    },
+    {
+      "paper_id": "metal-materials",
+      "question_id": "metal-materials-q44",
+      "question_type": "short_answer",
+      "student_answer": "不了解该题，答案与题意无关。",
+      "reference_answer": "(1)改变铸锭和坯料的组织和性能;\n(2)产生热变形纤维组织(流线);\n(3)可能产生带状组织;\n(4)可能产生热组织与魏氏组织。",
+      "scoring_points": [],
+      "max_score": 10.0,
+      "expected_score": 0.0
+    }
+  ]
+}
+
