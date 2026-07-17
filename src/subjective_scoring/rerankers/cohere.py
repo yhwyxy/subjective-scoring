@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 import math
+import time
 from typing import Any
 
 
@@ -42,6 +43,9 @@ class CohereRerankerPairScorer:
         timeout: float = 30.0,
         max_chunks_per_doc: int | None = None,
         overlap_tokens: int | None = None,
+        max_retries: int = 2,
+        retry_backoff_seconds: float = 1.0,
+        sleep_fn: Callable[[float], None] = time.sleep,
         client: Any | None = None,
     ) -> None:
         if not isinstance(url, str) or not url.strip():
@@ -56,6 +60,14 @@ class CohereRerankerPairScorer:
             raise ValueError("max_chunks_per_doc must be greater than zero")
         if overlap_tokens is not None and overlap_tokens < 0:
             raise ValueError("overlap_tokens must not be negative")
+        if isinstance(max_retries, bool) or not isinstance(max_retries, int):
+            raise ValueError("max_retries must be an integer")
+        if max_retries < 0:
+            raise ValueError("max_retries must not be negative")
+        if not math.isfinite(retry_backoff_seconds) or retry_backoff_seconds < 0:
+            raise ValueError("retry_backoff_seconds must be finite and non-negative")
+        if not callable(sleep_fn):
+            raise ValueError("sleep_fn must be callable")
 
         self.url = url.strip()
         self.model = model.strip()
@@ -63,6 +75,9 @@ class CohereRerankerPairScorer:
         self._api_key = api_key.strip()
         self.max_chunks_per_doc = max_chunks_per_doc
         self.overlap_tokens = overlap_tokens
+        self.max_retries = max_retries
+        self.retry_backoff_seconds = float(retry_backoff_seconds)
+        self._sleep_fn = sleep_fn
         self._httpx = _load_httpx()
         self._owns_client = client is None
         self._client = (
@@ -131,24 +146,45 @@ class CohereRerankerPairScorer:
         if self.overlap_tokens is not None:
             payload["overlap_tokens"] = self.overlap_tokens
 
-        try:
-            response = self._client.post(
-                self.url,
-                headers={
-                    "Authorization": f"Bearer {self._api_key}",
-                    "Content-Type": "application/json",
-                },
-                json=payload,
-            )
-        except self._httpx.HTTPError:
-            raise RemoteRerankerRequestError(
-                "remote reranker request failed"
-            ) from None
+        for attempt in range(self.max_retries + 1):
+            try:
+                response = self._client.post(
+                    self.url,
+                    headers={
+                        "Authorization": f"Bearer {self._api_key}",
+                        "Content-Type": "application/json",
+                    },
+                    json=payload,
+                )
+            except self._httpx.HTTPError:
+                if attempt >= self.max_retries:
+                    raise RemoteRerankerRequestError(
+                        "remote reranker request failed"
+                    ) from None
+                self._sleep_fn(self.retry_backoff_seconds * (2**attempt))
+                continue
 
-        if response.status_code < 200 or response.status_code >= 300:
-            raise RemoteRerankerRequestError(
-                f"remote reranker returned HTTP {response.status_code}"
+            if 200 <= response.status_code < 300:
+                break
+
+            retryable_status = response.status_code == 429 or (
+                500 <= response.status_code < 600
             )
+            if not retryable_status or attempt >= self.max_retries:
+                raise RemoteRerankerRequestError(
+                    f"remote reranker returned HTTP {response.status_code}"
+                )
+
+            delay = self.retry_backoff_seconds * (2**attempt)
+            retry_after = response.headers.get("Retry-After")
+            if retry_after is not None:
+                try:
+                    retry_after_seconds = float(retry_after)
+                except ValueError:
+                    retry_after_seconds = -1.0
+                if math.isfinite(retry_after_seconds) and retry_after_seconds >= 0:
+                    delay = max(delay, retry_after_seconds)
+            self._sleep_fn(delay)
 
         try:
             body = response.json()

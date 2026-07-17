@@ -184,7 +184,9 @@ def test_http_error_is_sanitized():
         return httpx.Response(503, content=b"document-secret")
 
     with pytest.raises(RemoteRerankerRequestError, match="503") as caught:
-        _scorer(handler).score_pairs([("student-secret", "document-secret")])
+        _scorer(handler, max_retries=0).score_pairs(
+            [("student-secret", "document-secret")]
+        )
 
     message = str(caught.value)
     assert API_KEY not in message
@@ -200,7 +202,9 @@ def test_transport_timeout_is_sanitized():
         raise httpx.ReadTimeout(sensitive_query, request=request)
 
     with pytest.raises(RemoteRerankerRequestError) as caught:
-        _scorer(handler).score_pairs([(sensitive_query, sensitive_document)])
+        _scorer(handler, max_retries=0).score_pairs(
+            [(sensitive_query, sensitive_document)]
+        )
 
     message = str(caught.value)
     assert API_KEY not in message
@@ -212,6 +216,104 @@ def test_transport_timeout_is_sanitized():
     assert API_KEY not in rendered_traceback
     assert sensitive_query not in rendered_traceback
     assert sensitive_document not in rendered_traceback
+
+
+def test_retries_429_once_and_honors_numeric_retry_after():
+    calls = 0
+    sleeps: list[float] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            return httpx.Response(429, headers={"Retry-After": "3"})
+        return httpx.Response(
+            200,
+            json={"results": [{"index": 0, "relevance_score": 0.8}]},
+        )
+
+    scores = _scorer(handler, sleep_fn=sleeps.append).score_pairs([("q", "d")])
+
+    assert scores == [0.8]
+    assert calls == 2
+    assert sleeps == [3.0]
+
+
+def test_retries_503_with_exponential_backoff_until_success():
+    calls = 0
+    sleeps: list[float] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal calls
+        calls += 1
+        if calls < 3:
+            return httpx.Response(503)
+        return httpx.Response(
+            200,
+            json={"results": [{"index": 0, "relevance_score": 0.6}]},
+        )
+
+    scores = _scorer(handler, sleep_fn=sleeps.append).score_pairs([("q", "d")])
+
+    assert scores == [0.6]
+    assert calls == 3
+    assert sleeps == [1.0, 2.0]
+
+
+def test_does_not_retry_non_retryable_4xx():
+    calls = 0
+    sleeps: list[float] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal calls
+        calls += 1
+        return httpx.Response(400, content=b"document-secret")
+
+    with pytest.raises(RemoteRerankerRequestError, match="400"):
+        _scorer(handler, sleep_fn=sleeps.append).score_pairs(
+            [("student-secret", "document-secret")]
+        )
+
+    assert calls == 1
+    assert sleeps == []
+
+
+def test_retries_connection_failures_then_raises_sanitized_error():
+    calls = 0
+    sleeps: list[float] = []
+    sensitive_query = "student-secret"
+    sensitive_document = "document-secret"
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal calls
+        calls += 1
+        raise httpx.ConnectError(sensitive_query, request=request)
+
+    with pytest.raises(RemoteRerankerRequestError) as caught:
+        _scorer(handler, sleep_fn=sleeps.append).score_pairs(
+            [(sensitive_query, sensitive_document)]
+        )
+
+    assert calls == 3
+    assert sleeps == [1.0, 2.0]
+    message = str(caught.value)
+    assert API_KEY not in message
+    assert sensitive_query not in message
+    assert sensitive_document not in message
+
+
+def test_does_not_retry_malformed_success_response():
+    calls = 0
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal calls
+        calls += 1
+        return httpx.Response(200, json={"results": {}})
+
+    with pytest.raises(RemoteRerankerResponseError):
+        _scorer(handler, sleep_fn=lambda seconds: None).score_pairs([("q", "d")])
+
+    assert calls == 1
 
 
 def test_repr_does_not_expose_api_key():

@@ -198,6 +198,8 @@ reranker = CohereRerankerPairScorer(
     api_key=os.environ["RERANK_API_KEY"],
     model=os.environ["RERANK_MODEL"],
     timeout=30.0,
+    max_retries=2,
+    retry_backoff_seconds=1.0,
 )
 
 service = SubjectiveScoringService(
@@ -207,7 +209,11 @@ service = SubjectiveScoringService(
 )
 ```
 
-适配器会把同一 query 的 documents 合并为一次请求，自动设置 `top_n`，并根据响应中的 `index` 恢复输入顺序。远端请求或响应失败时会抛出明确异常，由评分管线转为 0 分并要求人工复核，不会静默切换到词法相似度。
+HTTP/HTTPS 代理通过标准环境变量（例如 `HTTP_PROXY`、`HTTPS_PROXY`）配置；API key 只从应用环境注入。适配器会把同一 query 的 documents 合并为一次请求，自动设置 `top_n`，并根据响应中的 `index` 恢复输入顺序。
+
+连接错误、超时、HTTP 429 和 5xx 默认最多重试 2 次，并按 1 秒、2 秒指数退避；合法数值型 `Retry-After` 会作为最短等待时间。其他 4xx 和响应结构错误不会重试。`max_retries` 仅提高单次调用韧性，不会创建线程或增加并发。远端最终失败时会抛出脱敏异常，由评分管线转为 0 分并要求人工复核，不会静默切换到词法相似度。
+
+批量验收应由调用方保持并发为 1，并确保相邻远程请求至少间隔 1 秒。
 
 请求结构：
 
