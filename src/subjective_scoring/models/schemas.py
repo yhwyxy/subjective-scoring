@@ -223,6 +223,31 @@ class ScoringOptions(BaseModel):
         le=6,
         description="最终得分小数位数",
     )
+    calibration_points: tuple[tuple[float, float], ...] | None = Field(
+        default=None,
+        description="本次文本评分使用的单调校准曲线控制点",
+    )
+
+    @field_validator("calibration_points")
+    @classmethod
+    def _validate_calibration_points(
+        cls,
+        value: tuple[tuple[float, float], ...] | None,
+    ) -> tuple[tuple[float, float], ...] | None:
+        if value is None:
+            return None
+        if len(value) < 2:
+            raise ValueError("calibration_points 至少需要两个控制点")
+        previous_x = previous_y = -1.0
+        for x, y in value:
+            if not 0.0 <= x <= 1.0 or not 0.0 <= y <= 1.0:
+                raise ValueError("calibration_points 必须位于 0..1")
+            if x <= previous_x or y < previous_y:
+                raise ValueError(
+                    "calibration_points 必须按 x 严格递增且 y 单调不减"
+                )
+            previous_x, previous_y = x, y
+        return value
 
 
 # ---------------------------------------------------------------------------

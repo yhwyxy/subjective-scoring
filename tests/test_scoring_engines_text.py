@@ -386,6 +386,26 @@ def test_exact_match_normalization_preserves_semantic_tokens(
     assert result.metadata["decision_reason"] != "exact_reference_match"
 
 
+def test_request_scoped_calibration_overrides_default_without_leaking():
+    scorer = TextRerankerScorer(
+        pair_scorer=lambda student, point: 0.5,
+        allow_model_load=False,
+    )
+    custom = scorer.score(
+        _req(
+            scoring_config={
+                "calibration_points": ((0.0, 0.0), (0.5, 1.0), (1.0, 1.0))
+            }
+        )
+    )
+    default = scorer.score(_req())
+
+    assert custom.score == 10.0
+    assert custom.metadata["calibrator"] == "request_scoped"
+    assert default.score == 0.0
+    assert default.metadata["calibrator"] == "identity"
+
+
 def test_rule_interceptor_number_mismatch():
     ri = RuleInterceptor()
     hit = ri.check("缓存时间应为 30 秒", "缓存时间应为 60 秒", "p1")

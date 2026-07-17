@@ -74,11 +74,26 @@ def default_calibrator_for_backend(backend_name: str) -> ScoreCalibrator:
     return LOCAL_CROSS_ENCODER_CALIBRATOR
 
 
+def calibrator_for_backend(
+    backend_name: str,
+    calibration_points: Sequence[tuple[float, float]] | None = None,
+) -> ScoreCalibrator:
+    """优先使用请求级控制点，否则返回后端默认校准器。"""
+
+    if calibration_points is not None:
+        return PiecewiseLinearCalibrator(
+            calibration_points,
+            name="request_scoped",
+        )
+    return default_calibrator_for_backend(backend_name)
+
+
 __all__ = [
     "IDENTITY_CALIBRATOR",
     "LOCAL_CROSS_ENCODER_CALIBRATOR",
     "REMOTE_RERANKER_CALIBRATOR",
     "PiecewiseLinearCalibrator",
     "ScoreCalibrator",
+    "calibrator_for_backend",
     "default_calibrator_for_backend",
 ]

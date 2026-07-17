@@ -137,6 +137,27 @@ class TestScoringOptions:
         with pytest.raises(ValidationError):
             TextRelationThresholds(support=1.1)
 
+    def test_accepts_monotonic_calibration_points(self):
+        options = ScoringOptions(
+            calibration_points=((0.0, 0.0), (0.08, 0.25), (0.3, 0.8), (1.0, 1.0))
+        )
+
+        assert options.calibration_points[1] == (0.08, 0.25)
+        assert isinstance(options.calibration_points, tuple)
+
+    @pytest.mark.parametrize(
+        "points",
+        [
+            ((0.0, 0.0), (0.0, 1.0)),
+            ((0.0, 0.5), (1.0, 0.4)),
+            ((-0.1, 0.0), (1.0, 1.0)),
+            ((0.0, 0.0),),
+        ],
+    )
+    def test_rejects_invalid_calibration_points(self, points):
+        with pytest.raises(ValueError):
+            ScoringOptions(calibration_points=points)
+
 
 class TestIntermediateScoreResult:
     def test_valid_intermediate(self):

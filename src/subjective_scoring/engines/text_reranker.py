@@ -11,6 +11,7 @@ from threading import RLock
 
 from subjective_scoring.engines.calibration import (
     ScoreCalibrator,
+    calibrator_for_backend,
     default_calibrator_for_backend,
 )
 from subjective_scoring.engines._similarity import (
@@ -648,7 +649,14 @@ class TextRerankerScorer:
             warnings.append("语义模型不可用，已回退到词法相似度")
 
         support_threshold = self._support_threshold_for_backend(request, backend_name)
-        calibrator = self.calibrator or default_calibrator_for_backend(backend_name)
+        request_calibration_points = request.scoring_config.calibration_points
+        if request_calibration_points is not None:
+            calibrator = calibrator_for_backend(
+                backend_name,
+                request_calibration_points,
+            )
+        else:
+            calibrator = self.calibrator or default_calibrator_for_backend(backend_name)
         reference = reference.strip()
         reference_matches: list[PointEvidenceMatch] | None = None
         reference_cache_hit = False
