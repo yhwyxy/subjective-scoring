@@ -1,6 +1,6 @@
 # subjective-scoring
 
-多引擎主观题自动评分库：文本评分点 + SQL AST + 代码结构/语义混合，统一 `ScoringRequest` → `ScoringResult` 接口。
+多引擎主观题自动评分库：文本评分点 + 计算步骤 + SQL AST + 代码静态模板，统一 `ScoringRequest` → `ScoringResult` 接口。
 
 适合考试系统、作业批改、本地轻量部署。编排为纯 Python（无强制 Haystack），语义通道可选 [sentence-transformers](https://www.sbert.net/) CrossEncoder。
 
@@ -9,6 +9,7 @@
 - **Text**：原子评分点 × 三态关系（支持/冲突/不确定）+ 局部否定/数字规则 + 拒判复核
 - **SQL**：`sqlglot` AST 结构比较，单语句与顶层类型硬门槛（不走模型）
 - **Code**：`tree-sitter` 结构分 + 语义分加权融合；明确标记为静态估分
+- **Calculation**：固定步骤/最终答案的数值、单位和容差核验，不执行学生表达式
 - **统一契约**：置信度阈值、人工复核等级、证据点、可注入 scorer
 - **可降级**：无 GPU / 无模型时词法回退，单测不下载权重
 - **确定性保护**：空白答案直接 0 分；规范化后与标准答案一致时直接满分，均不调用模型
@@ -20,7 +21,7 @@
 # 核心（仅 pydantic）
 pip install subjective-scoring
 
-# 推荐：文本 + SQL + 代码
+# 推荐：文本 + SQL + 代码（含 Python/Java/JavaScript/C/C# 静态解析）
 pip install "subjective-scoring[text,sql,code]"
 
 # 启用语义 CrossEncoder（需 torch）
@@ -98,6 +99,38 @@ service.score({
     "scoring_mode": "sql",
     "reference_answer": "SELECT name FROM student WHERE age > 18",
     "student_answer": "select name from student where age > 18",
+})
+
+# 固定计算题：步骤分 + 最终答案分；不会执行学生表达式
+service.score({
+    "question_id": "calc-1",
+    "max_score": 20,
+    "scoring_mode": "calculation",
+    "student_answer": "锰增量 = 45%\n硅锰合金 = 753 kg\n最终答案：753 kg，135 kg",
+    "scoring_config": {
+        "calculation": {
+            "require_working": True,
+            "final_only_score_cap": 8,
+            "steps": [
+                {"id": "mn_delta", "description": "锰目标增量", "expected": 0.45, "tolerance": 0.005, "unit": "%", "score": 4, "keywords": ["增量"]},
+                {"id": "simn_amount", "description": "硅锰合金用量", "expected": 752.5, "tolerance": 1, "unit": "kg", "score": 8, "keywords": ["硅锰"]},
+            ],
+            "final_answers": [
+                {"id": "final_simn", "description": "硅锰最终答案", "expected": 753, "tolerance": 1, "unit": "kg", "score": 4},
+                {"id": "final_sife", "description": "硅铁最终答案", "expected": 135, "tolerance": 1, "unit": "kg", "score": 4},
+            ],
+        }
+    },
+})
+
+# 固定代码题：不执行代码，按题目模板检查 AST/静态特征
+service.score({
+    "question_id": "q21",
+    "max_score": 15,
+    "scoring_mode": "code",
+    "code_language": "python",
+    "code_scoring_profile": "find_index_static",
+    "student_answer": "def find_index(array, item):\n    for i, value in enumerate(array):\n        if value == item: return i",
 })
 
 service.score({
@@ -278,7 +311,7 @@ from subjective_scoring import (
 
 高级组件：`TextRerankerScorer`、`SQLStructureScorer`、`CodeHybridScorer`、`InputNormalizerComponent`、`QuestionTypeRouter`、`ScoreAggregatorComponent`。
 
-限制：第一阶段不会执行学生代码或 SQL。代码结果的中间元数据包含 `assessment_type=static_estimate`；无法静态验证的行为评分点会要求后续执行测试或人工复核。SQL 第一阶段只自动比较单条 `SELECT`，DML、DDL、多语句和解析失败答案为 0 分并要求复核。
+限制：第一阶段不会执行学生代码或 SQL。代码题可通过 `code_scoring_profile` 使用 `nested_loop_static` / `find_index_static` 模板；模板只做静态验证，运行时边界行为仍可能需要复核。SQL 第一阶段只自动比较单条 `SELECT`，DML、DDL、多语句和解析失败答案为 0 分并要求复核。
 
 ## 测试
 

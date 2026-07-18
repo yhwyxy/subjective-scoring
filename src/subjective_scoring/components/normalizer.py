@@ -332,6 +332,12 @@ class InputNormalizerComponent:
             reference = self.sql_normalizer.normalize(request.reference_answer)
             question = request.question  # 题干保持原样
             points = list(request.scoring_points)
+        elif resolved is ScoringMode.CALCULATION:
+            # 计算题保留等式、单位和换行，只做文本层 Unicode/空白归一化。
+            student = self.text_normalizer.normalize(request.student_answer)
+            reference = self.text_normalizer.normalize(request.reference_answer)
+            question = self.text_normalizer.normalize(request.question)
+            points = list(request.scoring_points)
         else:  # CODE
             lang = request.code_language
             student = self.code_normalizer.normalize(

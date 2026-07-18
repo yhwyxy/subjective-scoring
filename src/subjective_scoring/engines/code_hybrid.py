@@ -42,6 +42,8 @@ _LANG_MODULES = {
     "cc": "tree_sitter_cpp",
     "cxx": "tree_sitter_cpp",
     "c": "tree_sitter_cpp",
+    "csharp": "tree_sitter_c_sharp",
+    "c#": "tree_sitter_c_sharp",
 }
 
 _FEATURE_NODE_TYPES: dict[str, set[str]] = {
@@ -114,6 +116,7 @@ class StructureFeatures:
     function_names: set[str] = field(default_factory=set)
     recursive_functions: set[str] = field(default_factory=set)
     node_types: set[str] = field(default_factory=set)
+    loop_depth: int = 0
     parse_ok: bool = True
     error: str | None = None
 
@@ -149,6 +152,18 @@ class TreeSitterAstExtractor:
         function_defs: list[tuple[str, int, int]] = []
         call_sites: list[tuple[str, int]] = []
         source = code.encode("utf-8")
+
+        loop_types = _FEATURE_NODE_TYPES["loop"]
+        max_loop_depth = 0
+
+        def inspect_loop_depth(node: Any, depth: int = 0) -> None:
+            nonlocal max_loop_depth
+            next_depth = depth + 1 if node.type in loop_types else depth
+            max_loop_depth = max(max_loop_depth, next_depth)
+            for child in node.children:
+                inspect_loop_depth(child, next_depth)
+
+        inspect_loop_depth(root)
 
         def node_text(node: Any) -> str:
             return source[node.start_byte : node.end_byte].decode(
@@ -218,6 +233,7 @@ class TreeSitterAstExtractor:
             function_names=function_names,
             recursive_functions=recursive_functions,
             node_types=node_types,
+            loop_depth=max_loop_depth,
             parse_ok=True,
         )
 
@@ -347,6 +363,10 @@ class CodeHybridScorer:
         self.conflict_gap = conflict_gap
 
     def score(self, request: ScoringRequest) -> IntermediateScoreResult:
+        if request.code_scoring_profile:
+            from subjective_scoring.engines.code_static import CodeStaticScorer
+
+            return CodeStaticScorer(strip_comments=self.normalizer.strip_comments).score(request)
         precision = request.scoring_config.score_precision
         weights = request.scoring_config.code_score_weights
         lang = request.code_language or "python"

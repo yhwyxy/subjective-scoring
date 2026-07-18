@@ -28,6 +28,8 @@ from .components import (
 )
 from .engines import (
     CodeHybridScorer,
+    CodeStaticScorer,
+    CalculationScorer,
     PiecewiseLinearCalibrator,
     RuleInterceptor,
     SQLStructureScorer,
@@ -38,6 +40,8 @@ from .engines import (
 from .models import (
     REVIEW_LEVEL_RANK,
     CodeScoreWeights,
+    CalculationItem,
+    CalculationScoringConfig,
     EvidenceItem,
     IntermediateScoreResult,
     ManualReviewThresholds,
@@ -70,8 +74,12 @@ from .rerankers import (
 __all__ = [
     "REVIEW_LEVEL_RANK",
     "CodeHybridScorer",
+    "CodeStaticScorer",
+    "CalculationScorer",
     "CodeNormalizer",
     "CodeScoreWeights",
+    "CalculationItem",
+    "CalculationScoringConfig",
     "EvidenceItem",
     "InputNormalizerComponent",
     "IntermediateScoreResult",

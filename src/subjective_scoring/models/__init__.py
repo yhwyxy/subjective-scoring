@@ -3,6 +3,8 @@
 from .schemas import (
     REVIEW_LEVEL_RANK,
     CodeScoreWeights,
+    CalculationItem,
+    CalculationScoringConfig,
     EvidenceItem,
     IntermediateScoreResult,
     ManualReviewThresholds,
@@ -23,6 +25,8 @@ from .schemas import (
 __all__ = [
     "REVIEW_LEVEL_RANK",
     "CodeScoreWeights",
+    "CalculationItem",
+    "CalculationScoringConfig",
     "EvidenceItem",
     "IntermediateScoreResult",
     "ManualReviewThresholds",

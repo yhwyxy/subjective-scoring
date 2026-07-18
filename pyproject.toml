@@ -1,7 +1,7 @@
 [project]
 name = "subjective-scoring"
-version = "0.1.6"
-description = "Multi-engine subjective answer scoring: text scoring-points, SQL AST, code hybrid (structure + semantic)."
+version = "0.1.7"
+description = "Multi-engine subjective answer scoring: text points, calculation steps, SQL AST, and static code profiles."
 readme = "README.md"
 requires-python = ">=3.12"
 license = { text = "MIT" }
@@ -45,6 +45,7 @@ code = [
     "tree-sitter-java>=0.23",
     "tree-sitter-javascript>=0.23",
     "tree-sitter-cpp>=0.23",
+    "tree-sitter-c-sharp>=0.23",
 ]
 semantic = [
     "sentence-transformers>=3.0",

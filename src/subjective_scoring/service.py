@@ -25,6 +25,7 @@ from subjective_scoring.components.router import (
     ScorerProtocol,
 )
 from subjective_scoring.engines.code_hybrid import CodeHybridScorer
+from subjective_scoring.engines.calculation import CalculationScorer
 from subjective_scoring.engines.calibration import ScoreCalibrator
 from subjective_scoring.engines.sql_structure import SQLStructureScorer
 from subjective_scoring.engines.text_reranker import TextRerankerScorer
@@ -169,6 +170,7 @@ class SubjectiveScoringService:
                     strip_comments=strip_code_comments,
                     model_name=self.code_model,
                 ),
+                ScoringMode.CALCULATION: CalculationScorer(),
             }
 
         self.normalizer = normalizer or InputNormalizerComponent(

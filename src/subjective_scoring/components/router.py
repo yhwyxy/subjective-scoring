@@ -110,6 +110,7 @@ _MODE_TO_SCORER = {
     ScoringMode.TEXT: "TextRerankerScorer",
     ScoringMode.SQL: "SQLStructureScorer",
     ScoringMode.CODE: "CodeHybridScorer",
+    ScoringMode.CALCULATION: "CalculationScorer",
 }
 
 

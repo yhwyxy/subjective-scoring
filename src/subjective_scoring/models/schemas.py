@@ -12,7 +12,7 @@ docs/superpowers/specs/2026-07-11-subjective-scoring-design.md
 from __future__ import annotations
 
 from enum import Enum
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
@@ -28,6 +28,7 @@ class ScoringMode(str, Enum):
     TEXT = "text"
     SQL = "sql"
     CODE = "code"
+    CALCULATION = "calculation"
 
 
 class ReviewLevel(str, Enum):
@@ -196,6 +197,53 @@ class CodeScoreWeights(BaseModel):
         return self
 
 
+class CalculationItem(BaseModel):
+    """一个可确定性核验的计算步骤或最终答案。"""
+
+    model_config = ConfigDict(extra="forbid")
+
+    id: str = Field(..., min_length=1)
+    description: str = Field(..., min_length=1)
+    expected: float = Field(...)
+    score: float = Field(..., ge=0)
+    tolerance: float = Field(default=0.0, ge=0)
+    unit: str | None = Field(default=None, description="可选单位，如 kg、%")
+    keywords: tuple[str, ...] = Field(
+        default_factory=tuple,
+        description="可选步骤标签；配置后只在包含标签的行中匹配",
+    )
+
+
+class CalculationScoringConfig(BaseModel):
+    """固定题目的计算步骤评分配置，不执行任意学生表达式。"""
+
+    model_config = ConfigDict(extra="forbid")
+
+    strategy: Literal["static_values"] = "static_values"
+    steps: tuple[CalculationItem, ...] = Field(default_factory=tuple)
+    final_answers: tuple[CalculationItem, ...] = Field(default_factory=tuple)
+    require_working: bool = Field(
+        default=False,
+        description="要求过程时，只有检测到公式/等式结构才给步骤分",
+    )
+    final_only_score_cap: float | None = Field(
+        default=None,
+        ge=0,
+        description="只提交最终答案时的最高得分；为空表示不封顶",
+    )
+
+    @model_validator(mode="after")
+    def _check_ids_and_total(self) -> CalculationScoringConfig:
+        items = [*self.steps, *self.final_answers]
+        ids = [item.id for item in items]
+        if len(ids) != len(set(ids)):
+            raise ValueError("calculation steps/final_answers 的 id 必须唯一")
+        total = sum(item.score for item in items)
+        if self.final_only_score_cap is not None and self.final_only_score_cap > total + 1e-6:
+            raise ValueError("final_only_score_cap 不得超过计算配置总分")
+        return self
+
+
 class ScoringOptions(BaseModel):
     """单次评分的可调参数（对应设计文档 scoringConfig）。
 
@@ -212,6 +260,9 @@ class ScoringOptions(BaseModel):
     )
     code_score_weights: CodeScoreWeights = Field(
         default_factory=CodeScoreWeights,
+    )
+    calculation: CalculationScoringConfig = Field(
+        default_factory=CalculationScoringConfig,
     )
     allow_auto_scoring_point_generation: bool = Field(
         default=False,
@@ -268,7 +319,11 @@ class ScoringRequest(BaseModel):
     )
     scoring_mode: ScoringMode | None = Field(
         default=None,
-        description="显式评分模式 text/sql/code；优先于其他路由信号",
+        description="显式评分模式 text/sql/code/calculation；优先于其他路由信号",
+    )
+    code_scoring_profile: str | None = Field(
+        default=None,
+        description="代码静态评分模板，如 nested_loop_static / find_index_static",
     )
     code_language: str | None = Field(
         default=None,
