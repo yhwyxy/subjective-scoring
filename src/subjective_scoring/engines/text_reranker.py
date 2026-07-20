@@ -798,7 +798,11 @@ class TextRerankerScorer:
 
             if relation == PointRelation.SUPPORTED:
                 supported_count += 1
-                point_score = calibrated_sim * point.score
+                point_score = (
+                    point.score
+                    if calibrated_sim >= 0.85
+                    else calibrated_sim * point.score
+                )
                 soft_hits = [hit for hit in rule.hits if hit.severity != "hard"]
                 if soft_hits:
                     point_score *= 0.65

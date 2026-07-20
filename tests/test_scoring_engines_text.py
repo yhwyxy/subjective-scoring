@@ -34,7 +34,7 @@ def test_scores_points_with_injected_similarity():
 
     assert result.scorer == "TextRerankerScorer"
     assert result.scoring_mode is ScoringMode.TEXT
-    assert result.score == 4.5  # 低于支持阈值的原子评分点不再贡献残余分
+    assert result.score == 5.0  # 覆盖度 >= 0.85 的评分点给满分；低于支持阈值的原子评分点不贡献残余分
     assert len(result.matched_evidence) == 1
     assert result.matched_evidence[0].point_id == "p1"
     assert result.missed_evidence[0].point_id == "p2"
@@ -43,6 +43,29 @@ def test_scores_points_with_injected_similarity():
     assert result.missed_evidence[0].score == 0.0
     assert result.force_manual_review is False
     assert result.metadata["model"] == "injected"
+
+
+def test_supported_point_with_similarity_at_least_085_gets_full_score():
+    scorer = TextRerankerScorer(
+        pair_scorer=lambda student, point: 0.86,
+        allow_model_load=False,
+    )
+
+    result = scorer.score(
+        _req(
+            max_score=3,
+            scoring_points=[
+                {"id": "p1", "text": "HTTPS 使用 SSL 或 TLS 加密", "score": 3},
+            ],
+            student_answer="https 是在 http 基础上使用 ssl 协议进行了加密",
+            reference_answer="HTTPS 使用 SSL 或 TLS 对传输数据加密",
+        )
+    )
+
+    assert result.score == 3.0
+    assert result.matched_evidence[0].score == 3.0
+    assert result.matched_evidence[0].max_score == 3.0
+    assert result.matched_evidence[0].similarity == 0.86
 
 
 def test_negation_conflict_zeros_point_and_forces_review():
@@ -126,7 +149,7 @@ def test_supported_atomic_point_keeps_partial_credit_when_another_point_conflict
         )
     )
 
-    assert result.score == 4.5
+    assert result.score == 5.0
     assert [item.point_id for item in result.matched_evidence] == ["resource"]
     assert result.missed_evidence[0].relation is PointRelation.CONTRADICTED
     assert result.force_manual_review is True
@@ -208,7 +231,7 @@ def test_rubric_self_check_rejects_when_reference_misses_required_point():
         )
     )
 
-    assert result.score == 9.0
+    assert result.score == 10.0
     assert result.force_manual_review is True
     assert result.metadata["decision_reason"] == "rubric_self_check_failed"
     assert result.metadata["rubric_validation"][0]["supported"] is False
