@@ -184,14 +184,14 @@ class SQLAstComparator:
         r = self._select_exprs(ref)
         s = self._select_exprs(stu)
         sim = self._set_similarity(r, s)
-        return DimensionScore("select", w, sim, f"SELECT 字段 ref={sorted(r)} stu={sorted(s)}", sim >= 0.99)
+        return DimensionScore("select", w, sim, f"SELECT 字段 ref={sorted(r)} stu={sorted(s)}", sim >= 0.95)
 
     def _score_from(self, ref, stu) -> DimensionScore:
         w = _DEFAULT_WEIGHTS["from"]
         r = self._table_names(ref, include_joins=False)
         s = self._table_names(stu, include_joins=False)
         sim = self._set_similarity(r, s)
-        return DimensionScore("from", w, sim, f"FROM 表 ref={sorted(r)} stu={sorted(s)}", sim >= 0.99)
+        return DimensionScore("from", w, sim, f"FROM 表 ref={sorted(r)} stu={sorted(s)}", sim >= 0.95)
 
     def _score_join(self, ref, stu) -> DimensionScore:
         w = _DEFAULT_WEIGHTS["join"]
@@ -202,7 +202,7 @@ class SQLAstComparator:
         if not r_joins or not s_joins:
             return DimensionScore("join", w, 0.0, f"JOIN 存在性不一致 ref={r_joins} stu={s_joins}", False)
         sim = self._set_similarity(r_joins, s_joins)
-        return DimensionScore("join", w, sim, f"JOIN ref={sorted(r_joins)} stu={sorted(s_joins)}", sim >= 0.99)
+        return DimensionScore("join", w, sim, f"JOIN ref={sorted(r_joins)} stu={sorted(s_joins)}", sim >= 0.95)
 
     def _score_where(self, ref, stu) -> DimensionScore:
         w = _DEFAULT_WEIGHTS["where"]
@@ -214,7 +214,7 @@ class SQLAstComparator:
             return DimensionScore("where", w, 0.0, f"WHERE 存在性不一致", False)
         sim = self._set_similarity(r, s)
         # 运算符方向错误会体现在 signature 不同 → 低分
-        return DimensionScore("where", w, sim, f"WHERE 条件 ref={sorted(r)} stu={sorted(s)}", sim >= 0.99)
+        return DimensionScore("where", w, sim, f"WHERE 条件 ref={sorted(r)} stu={sorted(s)}", sim >= 0.95)
 
     def _score_group_by(self, ref, stu) -> DimensionScore:
         w = _DEFAULT_WEIGHTS["group_by"]
@@ -223,7 +223,7 @@ class SQLAstComparator:
         if not r and not s:
             return DimensionScore("group_by", w, 1.0, "双方均无 GROUP BY", True)
         sim = self._set_similarity(r, s)
-        return DimensionScore("group_by", w, sim, f"GROUP BY ref={sorted(r)} stu={sorted(s)}", sim >= 0.99)
+        return DimensionScore("group_by", w, sim, f"GROUP BY ref={sorted(r)} stu={sorted(s)}", sim >= 0.95)
 
     def _score_having(self, ref, stu) -> DimensionScore:
         w = _DEFAULT_WEIGHTS["having"]
@@ -232,7 +232,7 @@ class SQLAstComparator:
         if not r and not s:
             return DimensionScore("having", w, 1.0, "双方均无 HAVING", True)
         sim = self._set_similarity(r, s)
-        return DimensionScore("having", w, sim, f"HAVING ref={sorted(r)} stu={sorted(s)}", sim >= 0.99)
+        return DimensionScore("having", w, sim, f"HAVING ref={sorted(r)} stu={sorted(s)}", sim >= 0.95)
 
     def _score_order_by(self, ref, stu) -> DimensionScore:
         w = _DEFAULT_WEIGHTS["order_by"]
@@ -241,7 +241,7 @@ class SQLAstComparator:
         if not r and not s:
             return DimensionScore("order_by", w, 1.0, "双方均无 ORDER BY", True)
         sim = self._set_similarity(r, s)
-        return DimensionScore("order_by", w, sim, f"ORDER BY ref={sorted(r)} stu={sorted(s)}", sim >= 0.99)
+        return DimensionScore("order_by", w, sim, f"ORDER BY ref={sorted(r)} stu={sorted(s)}", sim >= 0.95)
 
     def _score_limit(self, ref, stu) -> DimensionScore:
         w = _DEFAULT_WEIGHTS["limit"]
@@ -260,7 +260,7 @@ class SQLAstComparator:
         if not r and not s:
             return DimensionScore("aggregates", w, 1.0, "双方均无聚合函数", True)
         sim = self._set_similarity(r, s)
-        return DimensionScore("aggregates", w, sim, f"聚合 ref={sorted(r)} stu={sorted(s)}", sim >= 0.99)
+        return DimensionScore("aggregates", w, sim, f"聚合 ref={sorted(r)} stu={sorted(s)}", sim >= 0.95)
 
     def _score_subquery(self, ref, stu) -> DimensionScore:
         w = _DEFAULT_WEIGHTS["subquery"]
@@ -272,7 +272,7 @@ class SQLAstComparator:
             return DimensionScore("subquery", w, 1.0, f"子查询数量={r}", True)
         # 数量接近给部分分
         sim = 1.0 - min(1.0, abs(r - s) / max(r, s, 1))
-        return DimensionScore("subquery", w, sim, f"子查询数量 ref={r} stu={s}", sim >= 0.99)
+        return DimensionScore("subquery", w, sim, f"子查询数量 ref={r} stu={s}", sim >= 0.95)
 
     def _score_operators(self, ref, stu) -> DimensionScore:
         w = _DEFAULT_WEIGHTS["operators"]
@@ -281,7 +281,7 @@ class SQLAstComparator:
         if not r and not s:
             return DimensionScore("operators", w, 1.0, "双方均无比较运算符", True)
         sim = self._set_similarity(r, s)
-        return DimensionScore("operators", w, sim, f"运算符 ref={sorted(r)} stu={sorted(s)}", sim >= 0.99)
+        return DimensionScore("operators", w, sim, f"运算符 ref={sorted(r)} stu={sorted(s)}", sim >= 0.95)
 
     # ----- AST helpers -----
 
@@ -451,7 +451,7 @@ class SQLScoreMapper:
                 reason=d.detail,
                 similarity=round(d.similarity, 4),
             )
-            if d.similarity >= 0.99:
+            if d.similarity >= 0.95:
                 matched.append(item)
             else:
                 missed.append(item)

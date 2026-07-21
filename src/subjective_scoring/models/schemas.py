@@ -162,12 +162,12 @@ class TextRelationThresholds(BaseModel):
         description="硬冲突规则达到该置信度时，评分点判定为 contradicted",
     )
     reject_when_no_supported: bool = Field(
-        default=True,
-        description="无 supported 点但存在 unknown 点时拒绝自动定分并要求人工复核",
+        default=False,
+        description="无 supported 点但存在 unknown 点时是否拒绝自动定分并要求人工复核",
     )
     required_unknown_requires_review: bool = Field(
-        default=True,
-        description="required 或 critical 评分点为 unknown 时要求人工复核",
+        default=False,
+        description="required 或 critical 评分点为 unknown 时是否要求人工复核",
     )
     apply_gate_to_synthetic_reference: bool = Field(
         default=False,

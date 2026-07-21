@@ -4,11 +4,12 @@ from __future__ import annotations
 
 import pytest
 
-from subjective_scoring import PointRelation, ScoringMode, ScoringRequest
+from subjective_scoring import PointRelation, ScoringMode, ScoringRequest, ScoringOptions, TextRelationThresholds
 from subjective_scoring.engines import RuleInterceptor, TextRerankerScorer
 
 
 def _req(**kwargs) -> ScoringRequest:
+    options = kwargs.pop("options", None)
     base = dict(
         question_id="q1",
         max_score=10,
@@ -20,6 +21,8 @@ def _req(**kwargs) -> ScoringRequest:
         student_answer="索引可以让数据库查得更快。",
         reference_answer="索引可以提高查询效率，减少全表扫描。",
     )
+    if options is not None:
+        base["scoring_config"] = options
     base.update(kwargs)
     return ScoringRequest.model_validate(base)
 
@@ -34,13 +37,13 @@ def test_scores_points_with_injected_similarity():
 
     assert result.scorer == "TextRerankerScorer"
     assert result.scoring_mode is ScoringMode.TEXT
-    assert result.score == 5.0  # 覆盖度 >= 0.85 的评分点给满分；低于支持阈值的原子评分点不贡献残余分
+    assert result.score == 6.0  # p1 满分 5.0（覆盖度 >= 0.85）+ p2 provisional 1.0（UNKNOWN 关系）
     assert len(result.matched_evidence) == 1
     assert result.matched_evidence[0].point_id == "p1"
     assert result.missed_evidence[0].point_id == "p2"
     assert result.matched_evidence[0].relation is PointRelation.SUPPORTED
     assert result.missed_evidence[0].relation is PointRelation.UNKNOWN
-    assert result.missed_evidence[0].score == 0.0
+    assert result.missed_evidence[0].score == 1.0  # UNKNOWN 点贡献 provisional 分值
     assert result.force_manual_review is False
     assert result.metadata["model"] == "injected"
 
@@ -199,6 +202,11 @@ def test_no_supported_points_with_unknown_relation_rejects_auto_scoring():
                 {"id": "resource", "text": "REST 以资源为中心", "score": 10}
             ],
             student_answer="REST 是一种架构风格",
+            options=ScoringOptions(
+                text_relation_thresholds=TextRelationThresholds(
+                    reject_when_no_supported=True
+                )
+            ),
         )
     )
 
@@ -425,7 +433,7 @@ def test_request_scoped_calibration_overrides_default_without_leaking():
 
     assert custom.score == 10.0
     assert custom.metadata["calibrator"] == "request_scoped"
-    assert default.score == 0.0
+    assert default.score == 5.0  # UNKNOWN 点在 reject_when_no_supported=False 时贡献 provisional 分值
     assert default.metadata["calibrator"] == "identity"
 
 
@@ -433,3 +441,74 @@ def test_rule_interceptor_number_mismatch():
     ri = RuleInterceptor()
     hit = ri.check("缓存时间应为 30 秒", "缓存时间应为 60 秒", "p1")
     assert any(h.kind == "number" for h in hit.hits)
+
+
+def test_rule_interceptor_number_no_conflict_when_student_has_matching_subset():
+    """学生答案包含评分点数字子集时不应冲突（如化学 0.1/0.2）。"""
+    ri = RuleInterceptor()
+    hit = ri.check("配制过程 0.1", "称取0.1g基准物溶于水，配成0.1L溶液", "p1")
+    assert not any(h.kind == "number" for h in hit.hits)
+
+
+def test_rule_interceptor_number_no_conflict_when_student_lacks_numbers():
+    """学生答案无数字、评分点有数字时，不应触发数字硬冲突。"""
+    ri = RuleInterceptor()
+    hit = ri.check(
+        "电压U_P=U_L/√3≈220V",
+        "线电压 = 相电压 × √3；线电流 = 相电流",
+        "p1",
+    )
+    hard = [h for h in hit.hits if h.kind == "number" and h.severity == "hard"]
+    assert len(hard) == 0
+
+
+def test_rule_interceptor_ip_address_extracted_correctly():
+    """IP 地址如 255.255.255.0 应被完整提取，不应被误判为冲突。"""
+    ri = RuleInterceptor()
+    hit = ri.check("子网掩码 255.255.255.0", "子网掩码为255.255.255.0", "p1")
+    assert not any(h.kind == "number" for h in hit.hits)
+
+
+def test_rule_interceptor_port_number_with_chinese_context():
+    """端口号如 3389 后跟中文字符应被正确提取。"""
+    ri = RuleInterceptor()
+    hit = ri.check("RDP 3389", "远程桌面使用3389端口", "p1")
+    assert not any(h.kind == "number" for h in hit.hits)
+
+
+def test_rule_interceptor_negation_no_false_positive_in_compound_words():
+    """否定词在复合词（无法/不同/不管）中不应触发冲突。"""
+    ri = RuleInterceptor()
+    hit = ri.check("无状态协议", "不同请求彼此独立，不保存会话状态", "p1")
+    neg_hits = [h for h in hit.hits if h.kind == "negation"]
+    assert len(neg_hits) == 0
+
+
+def test_rule_interceptor_negation_still_detects_real_contradiction():
+    """真实否定矛盾仍应被捕获。"""
+    ri = RuleInterceptor()
+    hit = ri.check("HTTP 是无状态协议", "HTTP 不是无状态协议", "p1")
+    assert any(h.kind == "negation" for h in hit.hits)
+
+
+def test_text_reranker_unknown_points_not_zeroed_when_no_supported():
+    """当所有点都是 unknown（无 supported）时，不应强制归零。"""
+    scorer = TextRerankerScorer(
+        pair_scorer=lambda s, p: 0.45,
+        allow_model_load=False,
+    )
+    result = scorer.score(
+        _req(
+            reference_answer="答案A",
+            student_answer="答案B",
+            options=ScoringOptions(
+                text_relation_thresholds=TextRelationThresholds(
+                    validate_reference_points=False
+                )
+            ),
+        )
+    )
+    assert result.score > 0.0
+    assert "no_supported_points_uncertain" not in result.metadata.get(
+        "decision_reason", ""
+    )

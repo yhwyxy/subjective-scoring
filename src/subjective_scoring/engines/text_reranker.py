@@ -57,11 +57,17 @@ _EXACT_MATCH_PUNCTUATION = str.maketrans(
     }
 )
 _NEGATION_RE = re.compile(
-    r"(不|没|无|非|未|并非|无法|不能|不会|不可|没有|不是|并非是|never|not|no|without|cannot|can't|won't)",
+    r"(并非是|无法|不能|不会|不可|没有|不是|并非|尚未"
+    r"|无(?![法限论需效辜聊奈恙缘比偿状态线数条件])"
+    r"|非(?![常凡洲法正式同])"
+    r"|未(?![来必知遂])"
+    r"|不(?![同过管仅然料断足堪屑可论如])"
+    r"|没"
+    r"|never|not|no|without|cannot|can't|won't)",
     re.IGNORECASE,
 )
 _NUMBER_RE = re.compile(
-    r"(?<![\w.])(-?\d+(?:\.\d+)?%?|[零〇一二三四五六七八九十百千万亿两]+)",
+    r"-?\d+(?:\.\d+)?%?",
 )
 _UNIT_RE = re.compile(
     r"(ms|s|秒|分钟|小时|天|%|％|倍|次|个|条|行|列|MB|GB|KB|mb|gb|kb)",
@@ -292,6 +298,7 @@ class RuleInterceptor:
             if point_polarity and clause_polarity and point_polarity[0] == clause_polarity[0]:
                 if point_polarity[1] != clause_polarity[1]:
                     return True, clause, 1.0
+                # 极性名称和值都相同 → 语义一致（_concept_polarity 已处理否定词翻转）
                 continue
 
             point_negated = self._has_negation(point)
@@ -304,7 +311,8 @@ class RuleInterceptor:
             if point_negated and not clause_negated:
                 continue
             # 单个宽泛 token 容易把别处的否定词错误关联到评分点。
-            if overlap >= 2 or any(
+            # 需要较高重叠才判定，避免"不保存会话状态"与"无状态协议"误判
+            if overlap >= 4 or any(
                 len(token) >= 4 and token in clause for token in point_tokens
             ):
                 confidence = min(1.0, 0.55 + overlap * 0.15)
@@ -318,9 +326,19 @@ class RuleInterceptor:
     def _concept_polarity(self, text: str) -> tuple[str, int] | None:
         value = text or ""
         for name, positive, negative in self.polarity_rules:
-            if positive.search(value):
+            m = positive.search(value)
+            if m:
+                # 检查匹配前是否有否定词（如"不是无状态"中"不是"在"无状态"之前）
+                # 仅当否定词在匹配范围之外时翻转极性
+                before = value[max(0, m.start() - 4):m.start()]
+                if before and _NEGATION_RE.search(before):
+                    return name, -1
                 return name, 1
-            if negative.search(value):
+            m = negative.search(value)
+            if m:
+                before = value[max(0, m.start() - 4):m.start()]
+                if before and _NEGATION_RE.search(before):
+                    return name, 1
                 return name, -1
         return None
 
@@ -333,8 +351,9 @@ class RuleInterceptor:
         if not pn:
             return False
         sn = self._extract_numbers(student)
-        # 评分点中出现的数字，学生答案应覆盖；缺失则冲突
-        return not pn.issubset(sn)
+        # 只有当学生答案包含数字且与评分点数字完全无交集时才冲突
+        # 学生答案无数字或包含子集时不冲突（可能是表述不同或省略中间步骤）
+        return bool(sn) and pn.isdisjoint(sn)
 
     def _unit_mismatch(self, point: str, student: str) -> bool:
         # “行/列/次”等汉字在普通词语中很常见；只有评分点明确包含数字时，
@@ -827,6 +846,9 @@ class TextRerankerScorer:
                     point_provisional_score *= 0.35
                 elif any(hit.severity != "hard" for hit in rule.hits):
                     point_provisional_score *= 0.65
+                # 当允许无 supported 点时自动定分，用 provisional 值参与计分
+                if not relation_options.reject_when_no_supported:
+                    point_score = point_provisional_score
                 if point.required or point.critical:
                     required_unknown = True
                 # 未拆分全文仅用于兼容兜底估分，始终要求人工复核。

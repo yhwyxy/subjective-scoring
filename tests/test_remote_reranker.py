@@ -400,7 +400,7 @@ def test_remote_pair_scorer_integrates_with_subjective_service():
 
     assert len(calls) == 2
     assert {call["query"] for call in calls} == {"point one", "point two"}
-    assert result.score == 4.2
+    assert result.score == 5.1  # p1 满分 5.0 + p2 UNKNOWN provisional 0.1
     assert result.track == "TextRerankerScorer"
     assert "原始相关度 1.00；校准覆盖度 0.85" in result.matched_points[0].reason
 

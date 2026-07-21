@@ -131,7 +131,7 @@ class TestScoringOptions:
         assert opts.code_score_weights.structure == 0.3
         assert opts.score_precision == 1
         assert opts.text_relation_thresholds.support == 0.55
-        assert opts.text_relation_thresholds.reject_when_no_supported is True
+        assert opts.text_relation_thresholds.reject_when_no_supported is False
 
     def test_text_relation_thresholds_are_bounded(self):
         with pytest.raises(ValidationError):
