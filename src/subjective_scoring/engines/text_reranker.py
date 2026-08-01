@@ -366,6 +366,27 @@ class RuleInterceptor:
         sn = self._extract_numbers(student)
         return bool(sn) and pn.isdisjoint(sn)
 
+    @staticmethod
+    def _unit_matches(text: str) -> set[str]:
+        """提取文本中的单位，但过滤掉非计量语境下的单字母标记。
+
+        单字母单位（A/V/W/m 等）在文本中可能是分类标记（A类、B档）
+        而非计量单位；只有前面有数字时才视为真单位。
+        """
+        units = set()
+        for m in _UNIT_RE.finditer(text or ""):
+            val = m.group(0).lower()
+            # 多字母单位或汉字单位：直接纳入
+            if len(val) > 1:
+                units.add(val)
+                continue
+            # 单字母单位：要求前面有数字才视为真计量单位
+            # （避免 "A 类" / "B 档" / "C 级" 中的分类字母被误认为安培/伏特等）
+            before = text[max(0, m.start() - 2) : m.start()]
+            if any(c.isdigit() for c in before):
+                units.add(val)
+        return units
+
     def _unit_mismatch(self, point: str, student: str) -> bool:
         # “行/列/次”等汉字在普通词语中很常见；只有评分点明确包含数字时，
         # 才将其解释为需要严格核对的计量单位。
@@ -374,10 +395,10 @@ class RuleInterceptor:
         # 纯数字评分点（max_score 兜底）不触发单位检测
         if len(self._extract_numbers(point)) == 1 and len(point.strip()) <= 6:
             return False
-        pu = {m.group(0).lower() for m in _UNIT_RE.finditer(point or "")}
+        pu = self._unit_matches(point)
         if not pu:
             return False
-        su = {m.group(0).lower() for m in _UNIT_RE.finditer(student or "")}
+        su = self._unit_matches(student)
         return not pu.intersection(su)
 
     def _direction_conflict(self, point: str, student: str) -> bool:
@@ -917,19 +938,27 @@ class TextRerankerScorer:
 
             if relation == PointRelation.SUPPORTED:
                 supported_count += 1
-                # 0.85 满分通道的实体前置条件：相似度再高，关键实体零命中时
-                # 也不给满分——纯套话答案语义相关但无实质内容。
+                # 0.85 满分通道的实体前置条件：相似度再高，关键实体零命中或
+                # 命中比例过低时也不给满分——纯套话答案语义相关但无实质内容，
+                # 或只命中了题干泛词（如"焊条"）但未覆盖评分点的区别性实体。
                 # 与 entity_gate 独立：这里只阻止满分通道，不额外压分；
                 # 实体零命中的套话仍然能拿到 calibrated_sim * score 的残余分。
                 # entity_gate_min_entities 不限制此处——任何有实体的评分点都
                 # 应防止套话用纯语义相似度拿到满分。
-                if (
+                _full_mark_blocked = (
                     calibrated_sim >= 0.85
                     and profile is not None
                     and entity_hits is not None
                     and corrections.enable_entity_gate
-                    and entity_hits.total == 0
-                ):
+                    and (
+                        entity_hits.total == 0
+                        or (
+                            entity_hits.entity_total > 0
+                            and entity_hits.total / entity_hits.entity_total < 0.5
+                        )
+                    )
+                )
+                if _full_mark_blocked:
                     point_score = calibrated_sim * point.score
                 else:
                     point_score = (
@@ -973,19 +1002,22 @@ class TextRerankerScorer:
 
             # 实体门槛：句段相似度再高，整卷关键实体零命中也按系数压分（套话拦截）。
             # 与保底互斥——保底触发意味着实体命中，此处必然不触发。
+            # 增强：额外检测"题干复述"——答案只命中了题干已出现的术语，
+            # 未命中任何评分点独有实体（exclusive_hits == 0），同样按系数压分。
             entity_gated = False
+            _stem_only = answer_stem_only_hits and entity_hits is not None and entity_hits.exclusive_hits == 0
             if (
                 profile is not None
                 and entity_hits is not None
                 and corrections.enable_entity_gate
-                and answer_zero_entity_hits
+                and (answer_zero_entity_hits or _stem_only)
                 and relation is not PointRelation.CONTRADICTED
                 and (
                     profile.entity_count >= corrections.entity_gate_min_entities
                     or answer_entity_pool
                     >= corrections.entity_gate_min_answer_entities
                 )
-                and entity_hits.total == 0
+                and (entity_hits.total == 0 or _stem_only)
             ):
                 entity_gated = True
                 gated_points.append(point.id)
@@ -993,10 +1025,16 @@ class TextRerankerScorer:
                 point_provisional_score *= corrections.entity_gate_ratio
                 relation_confidence = min(relation_confidence, 0.5)
                 adjusted_confidence = min(adjusted_confidence, 0.5)
-                gate_message = (
-                    f"实体门槛：答案未命中评分点 {point.id} 的任何关键实体"
-                    f"（术语/数值），得分按 {corrections.entity_gate_ratio:g} 折算"
-                )
+                if answer_zero_entity_hits:
+                    gate_message = (
+                        f"实体门槛：答案未命中评分点 {point.id} 的任何关键实体"
+                        f"（术语/数值），得分按 {corrections.entity_gate_ratio:g} 折算"
+                    )
+                else:
+                    gate_message = (
+                        f"题干复述检测：答案仅命中题干已有术语，未覆盖评分点"
+                        f" {point.id} 的独有内容，得分按 {corrections.entity_gate_ratio:g} 折算"
+                    )
                 warnings.append(gate_message)
                 reason_parts.append(gate_message)
 
