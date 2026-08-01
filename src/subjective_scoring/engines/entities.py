@@ -65,6 +65,11 @@ _CN_DIGITS = {
 }
 _MEASURE_WORDS = "次遍个种步条项点层级滴份台部位名组道"
 _CN_MEASURE_RE = re.compile("([零一两二三四五六七八九十])([" + _MEASURE_WORDS + "])")
+# 程度填充字（"过冷度越大" vs "过冷度增大"）会打断 bigram 匹配；只在后接
+# 常见单字形容词时删除，保留"越权/越级/更换"等实义词
+_DEGREE_FILLER_RE = re.compile(
+    "[越更愈](?=[大小快慢高低多少长短粗细好差深浅厚薄强弱早晚密疏])"
+)
 
 # 常见同义 / 等价表述：命中任意变体即视为命中该实体
 DEFAULT_EQUIVALENCES: tuple[tuple[str, ...], ...] = (
@@ -88,6 +93,9 @@ DEFAULT_EQUIVALENCES: tuple[tuple[str, ...], ...] = (
     ("酸碱中和", "中和"),
     ("样品", "试样", "样本"),
     ("试剂", "药品", "药剂"),
+    ("真值", "真实值", "实际值"),
+    ("示值", "测量值", "指示值", "读数"),
+    ("量程", "满量程", "测量范围"),
 )
 
 
@@ -102,6 +110,7 @@ def normalize_entity_text(text: str) -> str:
     value = _CN_MEASURE_RE.sub(
         lambda m: _CN_DIGITS[m.group(1)] + m.group(2), value
     )
+    value = _DEGREE_FILLER_RE.sub("", value)
     return _ENUMERATOR_RE.sub(" ", value)
 
 

@@ -204,6 +204,14 @@ class TextBoundedCorrections(BaseModel):
         ge=1,
         description="评分点可抽取实体数达到该值才启用门槛，防止单实体点误伤",
     )
+    entity_gate_min_answer_entities: int = Field(
+        default=3,
+        ge=1,
+        description=(
+            "整卷实体池达到该值时，单实体评分点也纳入门槛"
+            "（多个单实体点全部零命中同样构成套话签名）"
+        ),
+    )
     enable_numeric_floor: bool = Field(
         default=True,
         description="以数值为主的评分点，学生数字全对时抬升相似度下限",

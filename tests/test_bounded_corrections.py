@@ -110,6 +110,62 @@ def test_entity_gate_spares_paraphrase_with_cross_point_hits():
     assert result.metadata["bounded_corrections"]["gated_points"] == []
 
 
+def test_entity_gate_survives_degree_filler_paraphrase():
+    """真实误伤回归（materials q43-2）：'越大'与'增大'的程度填充字差异
+    不得造成实体零命中——删除'越/更/愈+形容词'后 bigram 匹配应命中。"""
+    result = _scorer(0.9).score(
+        _req(
+            scoring_points=[
+                {"id": "p1", "text": "过冷度越大，结晶趋势越大", "score": 5},
+                {"id": "p2", "text": "结晶速度越快,晶粒越细小", "score": 5},
+            ],
+            student_answer=(
+                "过冷度增大时，形核率和长大速度都增大，晶核数目增多，"
+                "结晶后晶粒细小，材料的强度、塑性、韧性都较好。"
+            ),
+        )
+    )
+
+    assert result.metadata["bounded_corrections"]["gated_points"] == []
+    assert result.score == 10.0
+
+
+def test_entity_gate_survives_terminology_equivalence():
+    """真实误伤回归（instrumentation q42-2）：'真值≈真实值'等价命中，不得压分。"""
+    result = _scorer(0.9).score(
+        _req(
+            scoring_points=[
+                {"id": "p1", "text": "测量值与真实值之差", "score": 10},
+            ],
+            student_answer="绝对误差是仪表示值与被测量真值之差。",
+        )
+    )
+
+    assert result.metadata["bounded_corrections"]["gated_points"] == []
+    assert result.score == 10.0
+
+
+def test_entity_gate_catches_generic_answer_on_single_entity_points():
+    """真实漏拦回归（environmental q41）：五个单实体评分点（大气污染/水污染…），
+    套话答案整卷零命中 -> 整卷实体池 >=3 时单实体点也要压分。"""
+    result = _scorer(0.9).score(
+        _req(
+            scoring_points=[
+                {"id": "p1", "text": "大气污染", "score": 2},
+                {"id": "p2", "text": "水污染", "score": 2},
+                {"id": "p3", "text": "土壤污染", "score": 2},
+                {"id": "p4", "text": "食品污染", "score": 2},
+                {"id": "p5", "text": "放射性污染", "score": 2},
+            ],
+            student_answer="污染种类挺多的，反正都要按环保规范来处理。",
+        )
+    )
+
+    # 五个点全被门槛压分：10 -> 2
+    assert result.score == 2.0
+    assert len(result.metadata["bounded_corrections"]["gated_points"]) == 5
+
+
 def test_entity_gate_can_be_disabled():
     options = ScoringOptions(
         text_bounded_corrections=TextBoundedCorrections(enable_entity_gate=False)

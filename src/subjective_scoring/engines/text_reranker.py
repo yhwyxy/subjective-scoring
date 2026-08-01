@@ -760,6 +760,11 @@ class TextRerankerScorer:
         answer_zero_entity_hits = all(
             hits.total == 0 for hits in entity_hit_list if hits is not None
         )
+        answer_entity_pool = sum(
+            profile.entity_count
+            for profile in entity_profiles
+            if profile is not None
+        )
         gated_points: list[str] = []
         floored_points: list[dict[str, str]] = []
 
@@ -940,7 +945,11 @@ class TextRerankerScorer:
                 and corrections.enable_entity_gate
                 and answer_zero_entity_hits
                 and relation is not PointRelation.CONTRADICTED
-                and profile.entity_count >= corrections.entity_gate_min_entities
+                and (
+                    profile.entity_count >= corrections.entity_gate_min_entities
+                    or answer_entity_pool
+                    >= corrections.entity_gate_min_answer_entities
+                )
                 and entity_hits.total == 0
             ):
                 entity_gated = True
