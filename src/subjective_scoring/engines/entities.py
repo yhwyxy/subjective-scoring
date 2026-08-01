@@ -375,7 +375,11 @@ def _extract_term_entities(
             continue
         variants = tuple(dict.fromkeys(group))
         for surface, entity in list(entities.items()):
-            if any(v in entity.surface for v in matched):
+            # 等价组合并：要求 entity.surface 完整匹配等价组中的变体，
+            # 而非子串匹配。避免"焊条"等价组通过子串扩散到
+            # "类型选用焊条"等复合实体中，导致学生通过泛词
+            # （单个"焊条"字串）绕过独有实体检测。
+            if entity.surface in group:
                 merged = tuple(dict.fromkeys((*entity.variants, *variants)))
                 entities[surface] = TermEntity(surface=surface, variants=merged)
 
