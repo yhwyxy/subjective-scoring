@@ -1006,7 +1006,10 @@ class TextRerankerScorer:
             # 未命中任何评分点独有实体（exclusive_hits == 0），同样按系数压分。
             # 进一步增强：短答案套话签名——答案很短（< 80 字）且整卷评分点
             # 相似度极高（>= 0.95）时，即使通过等价表泛词命中了少数实体，
-            # 只要命中比例不超过 50%，仍视为套话并压分。
+            # 只要独有实体完全未命中（exclusive_hits == 0）且覆盖率不超过 30%，
+            # 仍视为套话并压分。
+            # 注意：exclusive_hits > 0 意味着命中了评分点独有的内容，不应压分。
+            # 阈值从 0.5 降至 0.3 降低对正确短答案的误伤。
             entity_gated = False
             _stem_only = answer_stem_only_hits and entity_hits is not None and entity_hits.exclusive_hits == 0
             _platitude_short = (
@@ -1015,7 +1018,8 @@ class TextRerankerScorer:
                 and entity_hits is not None
                 and entity_hits.entity_total > 0
                 and calibrated_sim >= 0.95
-                and entity_hits.total / entity_hits.entity_total <= 0.5
+                and entity_hits.exclusive_hits == 0
+                and entity_hits.total / entity_hits.entity_total <= 0.3
             )
             if (
                 profile is not None
