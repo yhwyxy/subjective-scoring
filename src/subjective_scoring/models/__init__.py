@@ -19,6 +19,7 @@ from .schemas import (
     ScoringPoint,
     ScoringRequest,
     ScoringResult,
+    TextBoundedCorrections,
     TextRelationThresholds,
 )
 
@@ -41,5 +42,6 @@ __all__ = [
     "ScoringPoint",
     "ScoringRequest",
     "ScoringResult",
+    "TextBoundedCorrections",
     "TextRelationThresholds",
 ]

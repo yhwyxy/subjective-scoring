@@ -56,6 +56,7 @@ from .models import (
     ScoringPoint,
     ScoringRequest,
     ScoringResult,
+    TextBoundedCorrections,
     TextRelationThresholds,
 )
 from .service import (
@@ -112,6 +113,7 @@ __all__ = [
     "ScoringResult",
     "ScoringServiceResult",
     "SubjectiveScoringService",
+    "TextBoundedCorrections",
     "TextNormalizer",
     "TextRelationThresholds",
     "TextRerankerScorer",

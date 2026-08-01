@@ -22,6 +22,11 @@ from subjective_scoring.engines._similarity import (
     resolve_pair_scorer,
     tokenize,
 )
+from subjective_scoring.engines.entities import (
+    build_point_entity_profile,
+    has_cjk,
+    student_entity_view,
+)
 from subjective_scoring.models import (
     EvidenceItem,
     IntermediateScoreResult,
@@ -646,6 +651,7 @@ class TextRerankerScorer:
         precision = request.scoring_config.score_precision
         relation_options = request.scoring_config.text_relation_thresholds
         conflict_threshold = relation_options.conflict
+        corrections = request.scoring_config.text_bounded_corrections
 
         if not points:
             return IntermediateScoreResult(
@@ -730,6 +736,33 @@ class TextRerankerScorer:
         rubric_diagnostics: list[dict[str, object]] = []
         point_diagnostics: list[dict[str, object]] = []
 
+        # 有界修正共享的实体档案：合成兜底点与非中文评分点不参与
+        # （实体启发式面向中文语料，兜底点文本是整篇标准答案）
+        entity_profiles = [
+            None
+            if point.synthetic or not has_cjk(point.text)
+            else build_point_entity_profile(
+                point.text,
+                request.question,
+                corrections.extra_equivalences,
+            )
+            for point in points
+        ]
+        student_entity_text, student_number_variants = student_entity_view(student)
+        entity_hit_list = [
+            profile.match(student_entity_text, student_number_variants)
+            if profile is not None
+            else None
+            for profile in entity_profiles
+        ]
+        # 套话签名 = 整卷零命中：改述型答案总会在某个评分点命中实体，
+        # 只有对所有评分点都零命中的答案才进入门槛压分。
+        answer_zero_entity_hits = all(
+            hits.total == 0 for hits in entity_hit_list if hits is not None
+        )
+        gated_points: list[str] = []
+        floored_points: list[dict[str, str]] = []
+
         if reference_matches is not None:
             for point, reference_match in zip(points, reference_matches):
                 if not (point.required or point.critical):
@@ -769,7 +802,9 @@ class TextRerankerScorer:
                         f"评分表自检失败：标准答案未可靠支持必答或关键评分点 {point.id}"
                     )
 
-        for point, evidence_match in zip(points, student_matches):
+        for point_index, (point, evidence_match) in enumerate(
+            zip(points, student_matches)
+        ):
             raw_sim = float(
                 max(0.0, min(1.0, evidence_match.raw_similarity))
             )
@@ -787,6 +822,36 @@ class TextRerankerScorer:
             uncertain_hard_hits = [
                 hit for hit in rule.hard_hits if hit.confidence < conflict_threshold
             ]
+
+            # 保底修正：只抬相似度，且要求关键实体命中、无任何规则冲突。
+            # 实体命中检测基于学生答案全文，而非最佳句段。
+            profile = entity_profiles[point_index]
+            entity_hits = entity_hit_list[point_index]
+            correction_applied: str | None = None
+            if profile is not None and entity_hits is not None and not rule.hits:
+                if (
+                    corrections.enable_numeric_floor
+                    and profile.primarily_numeric
+                    and entity_hits.informative_numbers_complete
+                    and corrections.numeric_floor_similarity > calibrated_sim
+                ):
+                    calibrated_sim = corrections.numeric_floor_similarity
+                    correction_applied = "numeric_floor"
+                elif (
+                    corrections.enable_short_answer_floor
+                    and len(student) <= corrections.short_answer_max_chars
+                    and entity_hits.entity_total > 0
+                    and entity_hits.numbers_complete
+                    and entity_hits.coverage
+                    >= corrections.short_answer_term_coverage
+                    and corrections.short_answer_similarity_floor > calibrated_sim
+                ):
+                    calibrated_sim = corrections.short_answer_similarity_floor
+                    correction_applied = "short_answer_floor"
+                if correction_applied is not None:
+                    floored_points.append(
+                        {"point_id": point.id, "kind": correction_applied}
+                    )
 
             if confident_hard_hits:
                 relation = PointRelation.CONTRADICTED
@@ -809,6 +874,16 @@ class TextRerankerScorer:
                 f"校准覆盖度 {calibrated_sim:.2f}",
                 f"关系 {relation.value}",
             ]
+            if correction_applied == "numeric_floor":
+                reason_parts.append(
+                    "数值保底：关键数值全部命中且非题干抄写，相似度抬升至 "
+                    f"{corrections.numeric_floor_similarity:.2f}"
+                )
+            elif correction_applied == "short_answer_floor":
+                reason_parts.append(
+                    "短答案保底：实体覆盖率达标，相似度抬升至 "
+                    f"{corrections.short_answer_similarity_floor:.2f}"
+                )
 
             if rule.hits:
                 for hit in rule.hits:
@@ -856,6 +931,31 @@ class TextRerankerScorer:
                     force_review = True
                     reason_parts.append("全文兜底点未应用原子评分门槛，仅作待复核估分")
 
+            # 实体门槛：句段相似度再高，整卷关键实体零命中也按系数压分（套话拦截）。
+            # 与保底互斥——保底触发意味着实体命中，此处必然不触发。
+            entity_gated = False
+            if (
+                profile is not None
+                and entity_hits is not None
+                and corrections.enable_entity_gate
+                and answer_zero_entity_hits
+                and relation is not PointRelation.CONTRADICTED
+                and profile.entity_count >= corrections.entity_gate_min_entities
+                and entity_hits.total == 0
+            ):
+                entity_gated = True
+                gated_points.append(point.id)
+                point_score *= corrections.entity_gate_ratio
+                point_provisional_score *= corrections.entity_gate_ratio
+                relation_confidence = min(relation_confidence, 0.5)
+                adjusted_confidence = min(adjusted_confidence, 0.5)
+                gate_message = (
+                    f"实体门槛：答案未命中评分点 {point.id} 的任何关键实体"
+                    f"（术语/数值），得分按 {corrections.entity_gate_ratio:g} 折算"
+                )
+                warnings.append(gate_message)
+                reason_parts.append(gate_message)
+
             point_diagnostics.append(
                 {
                     "point_id": point.id,
@@ -871,6 +971,10 @@ class TextRerankerScorer:
                     "relation": relation.value,
                     "relation_confidence": round(relation_confidence, 4),
                     "synthetic": point.synthetic,
+                    "entity_count": profile.entity_count if profile else 0,
+                    "entity_hit_count": entity_hits.total if entity_hits else None,
+                    "entity_gate": entity_gated,
+                    "bounded_correction": correction_applied,
                     "rule_hits": [
                         {
                             "kind": hit.kind,
@@ -1012,6 +1116,10 @@ class TextRerankerScorer:
                 ),
                 "decision_reason": decision_reason,
                 "applied_caps": applied_caps,
+                "bounded_corrections": {
+                    "gated_points": gated_points,
+                    "floored_points": floored_points,
+                },
                 "rubric_validation": rubric_diagnostics,
                 "reference_cache_hit": reference_cache_hit,
                 "evidence_batch_mode": (

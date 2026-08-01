@@ -179,6 +179,68 @@ class TextRelationThresholds(BaseModel):
     )
 
 
+class TextBoundedCorrections(BaseModel):
+    """文本题三条有界修正：实体门槛（压）、数值保底与短答案保底（抬）。
+
+    互斥性约束：门槛只在关键实体零命中时触发，保底只在实体命中时触发，
+    两者不可能同时作用于同一评分点；保底通过 max() 只升不降，门槛通过
+    乘系数只降不升，保证每条规则单调且不反向越界。
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    enable_entity_gate: bool = Field(
+        default=True,
+        description="关键实体零命中时是否按 entity_gate_ratio 压缩该点得分",
+    )
+    entity_gate_ratio: float = Field(
+        default=0.2,
+        ge=0.0,
+        le=1.0,
+        description="实体零命中时该评分点得分的保留比例",
+    )
+    entity_gate_min_entities: int = Field(
+        default=2,
+        ge=1,
+        description="评分点可抽取实体数达到该值才启用门槛，防止单实体点误伤",
+    )
+    enable_numeric_floor: bool = Field(
+        default=True,
+        description="以数值为主的评分点，学生数字全对时抬升相似度下限",
+    )
+    numeric_floor_similarity: float = Field(
+        default=0.9,
+        ge=0.0,
+        le=1.0,
+        description="数值保底生效时的相似度下限（>=0.85 即整点满分）",
+    )
+    enable_short_answer_floor: bool = Field(
+        default=True,
+        description="短答案实体覆盖率达标时抬升相似度下限，缓解简洁答案被压分",
+    )
+    short_answer_max_chars: int = Field(
+        default=60,
+        ge=1,
+        description="触发短答案保底的答案长度上限（字符数）",
+    )
+    short_answer_similarity_floor: float = Field(
+        default=0.7,
+        ge=0.0,
+        le=1.0,
+        description="短答案保底生效时的相似度下限",
+    )
+    short_answer_term_coverage: float = Field(
+        default=0.8,
+        ge=0.0,
+        le=1.0,
+        description="短答案保底要求的关键实体覆盖率",
+    )
+    extra_equivalences: tuple[tuple[str, ...], ...] = Field(
+        default_factory=tuple,
+        description="业务侧追加的同义等价组，与内置等价表合并使用",
+    )
+
+
 class CodeScoreWeights(BaseModel):
     """代码题语义分 / 结构分融合权重，默认 0.7 / 0.3。"""
 
@@ -257,6 +319,9 @@ class ScoringOptions(BaseModel):
     )
     text_relation_thresholds: TextRelationThresholds = Field(
         default_factory=TextRelationThresholds,
+    )
+    text_bounded_corrections: TextBoundedCorrections = Field(
+        default_factory=TextBoundedCorrections,
     )
     code_score_weights: CodeScoreWeights = Field(
         default_factory=CodeScoreWeights,
