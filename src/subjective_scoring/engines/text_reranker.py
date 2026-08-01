@@ -954,7 +954,7 @@ class TextRerankerScorer:
                         entity_hits.total == 0
                         or (
                             entity_hits.entity_total > 0
-                            and entity_hits.total / entity_hits.entity_total <= 0.5
+                            and entity_hits.total / entity_hits.entity_total < 0.6
                         )
                     )
                 )
@@ -1004,16 +1004,18 @@ class TextRerankerScorer:
             # 与保底互斥——保底触发意味着实体命中，此处必然不触发。
             # 增强：额外检测"题干复述"——答案只命中了题干已出现的术语，
             # 未命中任何评分点独有实体（exclusive_hits == 0），同样按系数压分。
-            # 进一步增强：短答案套话签名——答案很短（< 80 字）且所有评分点
-            # 相似度极高（>= 0.95）时，即使通过等价表泛词命中了实体，也压分。
+            # 进一步增强：短答案套话签名——答案很短（< 80 字）且整卷评分点
+            # 相似度极高（>= 0.95）时，即使通过等价表泛词命中了少数实体，
+            # 只要命中比例不超过 50%，仍视为套话并压分。
             entity_gated = False
             _stem_only = answer_stem_only_hits and entity_hits is not None and entity_hits.exclusive_hits == 0
             _platitude_short = (
                 len(student) <= 80
                 and profile is not None
                 and entity_hits is not None
+                and entity_hits.entity_total > 0
                 and calibrated_sim >= 0.95
-                and entity_hits.exclusive_hits == 0
+                and entity_hits.total / entity_hits.entity_total <= 0.5
             )
             if (
                 profile is not None
