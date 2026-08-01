@@ -954,7 +954,7 @@ class TextRerankerScorer:
                         entity_hits.total == 0
                         or (
                             entity_hits.entity_total > 0
-                            and entity_hits.total / entity_hits.entity_total < 0.5
+                            and entity_hits.total / entity_hits.entity_total <= 0.5
                         )
                     )
                 )
@@ -1004,20 +1004,29 @@ class TextRerankerScorer:
             # 与保底互斥——保底触发意味着实体命中，此处必然不触发。
             # 增强：额外检测"题干复述"——答案只命中了题干已出现的术语，
             # 未命中任何评分点独有实体（exclusive_hits == 0），同样按系数压分。
+            # 进一步增强：短答案套话签名——答案很短（< 80 字）且所有评分点
+            # 相似度极高（>= 0.95）时，即使通过等价表泛词命中了实体，也压分。
             entity_gated = False
             _stem_only = answer_stem_only_hits and entity_hits is not None and entity_hits.exclusive_hits == 0
+            _platitude_short = (
+                len(student) <= 80
+                and profile is not None
+                and entity_hits is not None
+                and calibrated_sim >= 0.95
+                and entity_hits.exclusive_hits == 0
+            )
             if (
                 profile is not None
                 and entity_hits is not None
                 and corrections.enable_entity_gate
-                and (answer_zero_entity_hits or _stem_only)
+                and (answer_zero_entity_hits or _stem_only or _platitude_short)
                 and relation is not PointRelation.CONTRADICTED
                 and (
                     profile.entity_count >= corrections.entity_gate_min_entities
                     or answer_entity_pool
                     >= corrections.entity_gate_min_answer_entities
                 )
-                and (entity_hits.total == 0 or _stem_only)
+                and (entity_hits.total == 0 or _stem_only or _platitude_short)
             ):
                 entity_gated = True
                 gated_points.append(point.id)
@@ -1029,6 +1038,12 @@ class TextRerankerScorer:
                     gate_message = (
                         f"实体门槛：答案未命中评分点 {point.id} 的任何关键实体"
                         f"（术语/数值），得分按 {corrections.entity_gate_ratio:g} 折算"
+                    )
+                elif _platitude_short:
+                    gate_message = (
+                        f"套话签名：答案极短（{len(student)} 字）但相似度极高"
+                        f"（{calibrated_sim:.2f}），未覆盖评分点 {point.id} 的独有内容，"
+                        f"得分按 {corrections.entity_gate_ratio:g} 折算"
                     )
                 else:
                     gate_message = (
