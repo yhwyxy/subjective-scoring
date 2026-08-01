@@ -47,7 +47,7 @@ class CodeStaticScorer:
         )
 
     def _score_nested_loop(self, request: ScoringRequest, code: str) -> IntermediateScoreResult:
-        features = self.extractor.extract(code, request.code_language or "python")
+        features, _lang = self.extractor.extract_auto(code, request.code_language)
         checks = [
             ("language", 1.0, bool(request.code_language), "已提供代码语言"),
             ("parse", 1.0, features.parse_ok, "代码 AST 解析成功"),
@@ -63,7 +63,7 @@ class CodeStaticScorer:
         return self._build_result(request, "nested_loop_static", checks, features.parse_ok)
 
     def _score_find_index(self, request: ScoringRequest, code: str) -> IntermediateScoreResult:
-        features = self.extractor.extract(code, request.code_language or "python")
+        features, _lang = self.extractor.extract_auto(code, request.code_language)
         has_lookup_api = bool(re.search(r"\.index(?:Of)?\s*\(|Array\.IndexOf\s*\(", code, re.IGNORECASE))
         checks = [
             ("language", 1.0, bool(request.code_language), "已提供代码语言"),

@@ -124,6 +124,29 @@ class StructureFeatures:
 class TreeSitterAstExtractor:
     """提取结构特征；解析失败时返回 parse_ok=False。"""
 
+    # 语言探测候选顺序：题目允许"任选语言"时声明语言常与实际作答语言不符
+    _DETECT_LANGUAGES = ("python", "javascript", "java", "cpp")
+
+    def extract_auto(
+        self, code: str, language: str | None
+    ) -> tuple["StructureFeatures", str]:
+        """先按声明语言解析；失败则在候选语言中探测第一个解析成功的。
+
+        返回 (features, 实际使用的语言 key)。全部失败时返回声明语言的
+        失败结果，保留原始错误信息。
+        """
+        declared = (language or "python").lower()
+        primary = self.extract(code, declared)
+        if primary.parse_ok:
+            return primary, declared
+        for candidate in self._DETECT_LANGUAGES:
+            if candidate == declared:
+                continue
+            features = self.extract(code, candidate)
+            if features.parse_ok:
+                return features, candidate
+        return primary, declared
+
     def extract(self, code: str, language: str | None) -> StructureFeatures:
         if Parser is None or Language is None:
             return StructureFeatures(parse_ok=False, error="tree_sitter 未安装")
@@ -386,13 +409,17 @@ class CodeHybridScorer:
             force_review = True
 
         if ref:
-            ref_feat = self.extractor.extract(ref, lang)
+            ref_feat, ref_lang = self.extractor.extract_auto(ref, lang)
         else:
-            ref_feat = StructureFeatures(parse_ok=False, error="empty")
+            ref_feat, ref_lang = StructureFeatures(parse_ok=False, error="empty"), lang
         if stu:
-            stu_feat = self.extractor.extract(stu, lang)
+            stu_feat, stu_lang = self.extractor.extract_auto(stu, lang)
         else:
-            stu_feat = StructureFeatures(parse_ok=False, error="empty")
+            stu_feat, stu_lang = StructureFeatures(parse_ok=False, error="empty"), lang
+        if ref_feat.parse_ok and ref_lang != lang:
+            warnings.append(f"参考代码按 {ref_lang} 解析（声明语言 {lang} 解析失败）")
+        if stu_feat.parse_ok and stu_lang != lang:
+            warnings.append(f"学生代码按 {stu_lang} 解析（声明语言 {lang} 解析失败）")
 
         structure_sim, s_matched, s_missed, s_warnings = self.structure_calculator.score(
             ref_feat, stu_feat
