@@ -40,6 +40,37 @@ def test_extract_auto_prefers_declared_language():
     assert lang == "python"
 
 
+def test_extract_auto_strips_language_label_line():
+    """真实作答回归（software-development q16 SIM-M）：
+    'Python:' 标注行 + 代码 -> 剥离标注后应解析成功。"""
+    code = "Python:\nfor i in range(3):\n    for j in range(3):\n        print(i, j)"
+    features, lang = TreeSitterAstExtractor().extract_auto(code, "python")
+    assert features.parse_ok is True
+    assert lang == "python"
+    assert features.loop_depth >= 2
+
+
+def test_extract_auto_strips_surrounding_prose():
+    """真实作答回归（software-development q16 SIM-H）：
+    中文说明段落 + 代码 + 中文总结段落 -> 抽取代码块解析。"""
+    code = (
+        "使用语言：Python。下面是一段嵌套循环代码，打印九九乘法表：\n"
+        "\n"
+        "# Python 3\n"
+        "for i in range(1, 10):          # 外层循环控制行\n"
+        "    for j in range(1, i + 1):   # 内层循环控制列\n"
+        "        print(f\"{j}x{i}={i*j}\", end=\"\\t\")\n"
+        "    print()  # 每行结束换行\n"
+        "\n"
+        "外层循环每执行一次，内层循环完整执行一遍，共输出 45 个算式，"
+        "体现了嵌套循环“外层控制轮数、内层控制每轮次数”的结构。\n"
+    )
+    features, lang = TreeSitterAstExtractor().extract_auto(code, "python")
+    assert features.parse_ok is True
+    assert lang == "python"
+    assert features.loop_depth >= 2
+
+
 def test_hybrid_scorer_recovers_structure_for_js_answer_without_language():
     """code_language 缺失（默认 python）+ 参考/学生都是 JS：
     结构分不得再因解析失败归零。"""

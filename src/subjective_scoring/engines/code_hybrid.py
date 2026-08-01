@@ -126,11 +126,59 @@ class TreeSitterAstExtractor:
 
     # 语言探测候选顺序：题目允许"任选语言"时声明语言常与实际作答语言不符
     _DETECT_LANGUAGES = ("python", "javascript", "java", "cpp")
+    # 语言标注行："Python:" / "使用语言：java" —— 常见于"请标明所使用的语言"类题
+    _LANG_LABEL_RE = re.compile(
+        r"^\s*(?:使用语言|语言|language)?\s*[:：]?\s*"
+        r"(?:python|javascript|java|c\+\+|c#|csharp|js|ts|go|c)\s*"
+        r"(?:\d+)?\s*[:：。.]?\s*$",
+        re.IGNORECASE,
+    )
+    _CJK_RE = re.compile(r"[一-鿿]")
+
+    @classmethod
+    def _is_prose_line(cls, line: str) -> bool:
+        stripped = line.strip()
+        if not stripped:
+            return False
+        if stripped.startswith(("#", "//", "/*", "*")):
+            return False  # 注释行属于代码块
+        if cls._LANG_LABEL_RE.match(stripped):
+            return True
+        visible = stripped.replace(" ", "")
+        if not visible:
+            return False
+        cjk = len(cls._CJK_RE.findall(visible))
+        return cjk / len(visible) >= 0.3
+
+    @classmethod
+    def _extract_code_block(cls, text: str) -> str | None:
+        """从"说明文字 + 代码"混排作答中取最长的连续代码行块。"""
+        lines = text.splitlines()
+        best: list[str] = []
+        current: list[str] = []
+        for line in lines:
+            if cls._is_prose_line(line):
+                if len([l for l in current if l.strip()]) > len(
+                    [l for l in best if l.strip()]
+                ):
+                    best = current
+                current = []
+            else:
+                current.append(line)
+        if len([l for l in current if l.strip()]) > len(
+            [l for l in best if l.strip()]
+        ):
+            best = current
+        block = "\n".join(best).strip("\n")
+        if not block.strip() or block.strip() == text.strip():
+            return None
+        return block
 
     def extract_auto(
         self, code: str, language: str | None
     ) -> tuple["StructureFeatures", str]:
-        """先按声明语言解析；失败则在候选语言中探测第一个解析成功的。
+        """先按声明语言解析；失败则探测其他语言；再失败则剥离说明文字
+        取代码块重试。
 
         返回 (features, 实际使用的语言 key)。全部失败时返回声明语言的
         失败结果，保留原始错误信息。
@@ -145,6 +193,12 @@ class TreeSitterAstExtractor:
             features = self.extract(code, candidate)
             if features.parse_ok:
                 return features, candidate
+        block = self._extract_code_block(code)
+        if block is not None:
+            for candidate in (declared, *self._DETECT_LANGUAGES):
+                features = self.extract(block, candidate)
+                if features.parse_ok:
+                    return features, candidate
         return primary, declared
 
     def extract(self, code: str, language: str | None) -> StructureFeatures:
