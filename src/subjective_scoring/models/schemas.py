@@ -227,7 +227,7 @@ class TextBoundedCorrections(BaseModel):
         description="短答案实体覆盖率达标时抬升相似度下限，缓解简洁答案被压分",
     )
     short_answer_max_chars: int = Field(
-        default=60,
+        default=150,
         ge=1,
         description="触发短答案保底的答案长度上限（字符数）",
     )

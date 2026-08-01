@@ -37,7 +37,7 @@ def test_scores_points_with_injected_similarity():
 
     assert result.scorer == "TextRerankerScorer"
     assert result.scoring_mode is ScoringMode.TEXT
-    assert result.score == 6.0  # p1 满分 5.0（覆盖度 >= 0.85）+ p2 provisional 1.0（UNKNOWN 关系）
+    assert result.score == 5.5  # p1 4.5（满分通道被实体前置条件阻止，0.9*5）+ p2 provisional 1.0（UNKNOWN 关系）
     assert len(result.matched_evidence) == 1
     assert result.matched_evidence[0].point_id == "p1"
     assert result.missed_evidence[0].point_id == "p2"

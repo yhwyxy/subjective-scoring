@@ -66,7 +66,7 @@ _NEGATION_RE = re.compile(
     r"|无(?![法限论需效辜聊奈恙缘比偿状态线数条件])"
     r"|非(?![常凡洲法正式同])"
     r"|未(?![来必知遂])"
-    r"|不(?![同过管仅然料断足堪屑可论如])"
+    r"|不(?![同过管仅然料断足堪屑可论如低符超及良佳逊亚足])"
     r"|没"
     r"|never|not|no|without|cannot|can't|won't)",
     re.IGNORECASE,
@@ -75,7 +75,11 @@ _NUMBER_RE = re.compile(
     r"-?\d+(?:\.\d+)?%?",
 )
 _UNIT_RE = re.compile(
-    r"(ms|s|秒|分钟|小时|天|%|％|倍|次|个|条|行|列|MB|GB|KB|mb|gb|kb)",
+    r"(ms|s|秒|分钟|小时|天|%|％|倍|次|个|条|行|列|mb|gb|kb"
+    r"|MPa|kPa|Pa|pa|V|A|W|kW|kV|mA|mV"
+    r"|Hz|kHz|MHz|rpm|r/min|N"
+    r"|mm|cm|m|km|kg|g|t|L|ml|mah|mAh"
+    r"|MB|GB|KB)",
     re.IGNORECASE,
 )
 _DIRECTION_PAIRS = (
@@ -355,15 +359,20 @@ class RuleInterceptor:
         pn = self._extract_numbers(point)
         if not pn:
             return False
+        # 纯数字评分点（如 max_score 作兜底文本 "10"）不触发数字不匹配：
+        # 这是自动生成的代理文本，数字本身无语义约束。
+        if len(pn) == 1 and len(point.strip()) <= 6:
+            return False
         sn = self._extract_numbers(student)
-        # 只有当学生答案包含数字且与评分点数字完全无交集时才冲突
-        # 学生答案无数字或包含子集时不冲突（可能是表述不同或省略中间步骤）
         return bool(sn) and pn.isdisjoint(sn)
 
     def _unit_mismatch(self, point: str, student: str) -> bool:
         # “行/列/次”等汉字在普通词语中很常见；只有评分点明确包含数字时，
         # 才将其解释为需要严格核对的计量单位。
         if not self._extract_numbers(point):
+            return False
+        # 纯数字评分点（max_score 兜底）不触发单位检测
+        if len(self._extract_numbers(point)) == 1 and len(point.strip()) <= 6:
             return False
         pu = {m.group(0).lower() for m in _UNIT_RE.finditer(point or "")}
         if not pu:
@@ -760,6 +769,17 @@ class TextRerankerScorer:
         answer_zero_entity_hits = all(
             hits.total == 0 for hits in entity_hit_list if hits is not None
         )
+        # 题干复述检测：答案只命中了题干中已存在的术语（如复述题干关键词），
+        # 但未命中任何评分点独有实体——空泛套话只会抄题干词，没有实质内容。
+        # 仅当不是整卷零命中（否则已由 answer_zero_entity_hits 覆盖）时才触发。
+        answer_stem_only_hits = (
+            not answer_zero_entity_hits
+            and all(
+                hits.exclusive_hits == 0
+                for hits in entity_hit_list
+                if hits is not None
+            )
+        )
         answer_entity_pool = sum(
             profile.entity_count
             for profile in entity_profiles
@@ -897,11 +917,26 @@ class TextRerankerScorer:
 
             if relation == PointRelation.SUPPORTED:
                 supported_count += 1
-                point_score = (
-                    point.score
-                    if calibrated_sim >= 0.85
-                    else calibrated_sim * point.score
-                )
+                # 0.85 满分通道的实体前置条件：相似度再高，关键实体零命中时
+                # 也不给满分——纯套话答案语义相关但无实质内容。
+                # 与 entity_gate 独立：这里只阻止满分通道，不额外压分；
+                # 实体零命中的套话仍然能拿到 calibrated_sim * score 的残余分。
+                # entity_gate_min_entities 不限制此处——任何有实体的评分点都
+                # 应防止套话用纯语义相似度拿到满分。
+                if (
+                    calibrated_sim >= 0.85
+                    and profile is not None
+                    and entity_hits is not None
+                    and corrections.enable_entity_gate
+                    and entity_hits.total == 0
+                ):
+                    point_score = calibrated_sim * point.score
+                else:
+                    point_score = (
+                        point.score
+                        if calibrated_sim >= 0.85
+                        else calibrated_sim * point.score
+                    )
                 soft_hits = [hit for hit in rule.hits if hit.severity != "hard"]
                 if soft_hits:
                     point_score *= 0.65

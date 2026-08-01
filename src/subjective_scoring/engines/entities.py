@@ -96,6 +96,69 @@ DEFAULT_EQUIVALENCES: tuple[tuple[str, ...], ...] = (
     ("真值", "真实值", "实际值"),
     ("示值", "测量值", "指示值", "读数"),
     ("量程", "满量程", "测量范围"),
+    ("无状态", "不依赖历史上下文", "不保存会话"),
+    ("有状态", "依赖上下文", "保存会话"),
+    # 机械/材料/冶金
+    ("淬透性", "淬硬性", "可淬性"),
+    ("晶粒", "晶粒度", "晶粒大小"),
+    ("形核", "成核", "晶核"),
+    ("过冷度", "过冷", "过冷程度"),
+    ("抗拉强度", "强度极限", "抗拉极限"),
+    ("伸长率", "延伸率", "断后伸长率"),
+    ("奥氏体", "A体"),
+    ("马氏体", "M体"),
+    # 焊接
+    ("焊条", "焊丝", "焊接材料"),
+    ("熔敷金属", "焊缝金属", "堆焊金属"),
+    ("碱性焊条", "低氢焊条", "低氢型焊条"),
+    ("药皮", "焊条药皮", "焊药"),
+    # 电气
+    ("PLC", "可编程控制器", "可编程逻辑控制器"),
+    ("DCS", "集散控制系统", "分散控制系统"),
+    ("变频器", "逆变器", "VFD"),
+    ("过载保护", "过流保护", "过负荷保护"),
+    # 化学分析
+    ("滴定", "滴定分析", "容量分析"),
+    ("标准溶液", "滴定液", "标准滴定溶液"),
+    ("指示剂", "指示液"),
+    ("化学计量点", "等当点", "计量点"),
+    ("终点", "滴定终点"),
+    # 仪器仪表
+    ("压力变送器", "压力传感器", "压力传送器"),
+    ("差压变送器", "差压传感器"),
+    ("零位迁移", "零点迁移", "零点调整"),
+    # 矿物加工
+    ("单体解离", "解离", "矿物解离"),
+    ("脉石", "脉石矿物", "废石"),
+    ("品位", "含量", "质量分数"),
+    ("精矿", "精矿粉", "选矿产品"),
+    # 能源动力
+    ("受热面", "加热面", "换热面"),
+    ("汽包", "锅筒", "锅炉汽包"),
+    ("紧急停炉", "事故停炉", "立即停炉"),
+    # 安全管理
+    ("三违", "违章行为", "违规行为"),
+    ("违章指挥", "违规指挥"),
+    ("违章操作", "违章作业", "违规操作"),
+    ("安全规程", "安全操作规程", "安全规范"),
+    # 通信
+    ("物理层", "第一层", "PHY"),
+    ("数据链路层", "链路层", "第二层"),
+    ("网络层", "第三层"),
+    ("传输层", "第四层"),
+    # 计算机/代码
+    ("嵌套循环", "双重循环", "多层循环"),
+    ("数组", "列表", "array"),
+    ("遍历", "迭代", "循环遍历", "扫描"),
+    ("算法", "实现方法", "实现方案"),
+    # 通用工程
+    ("废液", "废水", "污水"),
+    ("废气", "尾气", "烟尘"),
+    ("除尘", "收尘", "集尘"),
+    ("回收率", "收率", "得率"),
+    ("合格率", "合格品率"),
+    ("工艺", "流程", "工序"),
+    ("图纸", "图样", "设计图"),
 )
 
 
@@ -163,10 +226,22 @@ class EntityHits:
     number_total: int
     informative_number_hits: int
     informative_number_total: int
+    exclusive_term_hits: int = 0
+    exclusive_term_total: int = 0
 
     @property
     def total(self) -> int:
         return self.term_hits + self.number_hits
+
+    @property
+    def exclusive_total(self) -> int:
+        """评分点独有实体数（排除题干已包含的术语）。"""
+        return self.exclusive_term_total + self.number_hits
+
+    @property
+    def exclusive_hits(self) -> int:
+        """题干之外的独有实体命中数。"""
+        return self.exclusive_term_hits + self.number_hits
 
     @property
     def entity_total(self) -> int:
@@ -214,12 +289,23 @@ def _term_hit(entity: TermEntity, student_normalized: str) -> bool:
 
 @dataclass(frozen=True)
 class PointEntityProfile:
-    """评分点的关键实体档案：术语 + 数字（区分题干已出现的数字）。"""
+    """评分点的关键实体档案：术语 + 数字（区分题干已出现的数字和术语）。"""
 
     terms: tuple[TermEntity, ...]
     numbers: tuple[frozenset[str], ...]
     informative_numbers: tuple[frozenset[str], ...]
     primarily_numeric: bool
+    stem_terms: frozenset[str] = frozenset()
+    """题干中也存在的术语 surface 集合，用于题干复述检测。"""
+
+    @property
+    def entity_count(self) -> int:
+        return len(self.terms) + len(self.numbers)
+
+    @property
+    def exclusive_term_count(self) -> int:
+        """评分点独有（题干未出现）的术语实体数。"""
+        return sum(1 for t in self.terms if t.surface not in self.stem_terms)
 
     @property
     def entity_count(self) -> int:
@@ -232,6 +318,15 @@ class PointEntityProfile:
     ) -> EntityHits:
         term_hits = sum(
             1 for term in self.terms if _term_hit(term, student_normalized)
+        )
+        # 统计独有术语（题干中未出现）的命中情况
+        exclusive_hits = sum(
+            1 for term in self.terms
+            if term.surface not in self.stem_terms
+            and _term_hit(term, student_normalized)
+        )
+        exclusive_total = sum(
+            1 for term in self.terms if term.surface not in self.stem_terms
         )
         number_hits = sum(
             1
@@ -250,6 +345,8 @@ class PointEntityProfile:
             number_total=len(self.numbers),
             informative_number_hits=informative_hits,
             informative_number_total=len(self.informative_numbers),
+            exclusive_term_hits=exclusive_hits,
+            exclusive_term_total=exclusive_total,
         )
 
 
@@ -310,14 +407,18 @@ def build_point_entity_profile(
     normalized_point = normalize_entity_text(point_text)
     equivalences = (*DEFAULT_EQUIVALENCES, *extra_equivalences)
     terms = _extract_term_entities(normalized_point, equivalences)
-    numbers = extract_number_variant_sets(normalized_point)
 
     stem_variants: frozenset[str] = frozenset()
+    stem_term_surfaces: set[str] = set()
     if question_text:
-        stem_numbers = extract_number_variant_sets(
-            normalize_entity_text(question_text)
-        )
+        normalized_stem = normalize_entity_text(question_text)
+        stem_numbers = extract_number_variant_sets(normalized_stem)
         stem_variants = frozenset().union(*stem_numbers) if stem_numbers else frozenset()
+        # 抽取题干中的术语 surface，用于题干复述检测
+        for term in _extract_term_entities(normalized_stem, equivalences):
+            stem_term_surfaces.add(term.surface)
+
+    numbers = extract_number_variant_sets(normalized_point)
     informative = tuple(
         variants for variants in numbers if not (variants & stem_variants)
     )
@@ -328,6 +429,7 @@ def build_point_entity_profile(
         numbers=numbers,
         informative_numbers=informative,
         primarily_numeric=primarily_numeric,
+        stem_terms=frozenset(stem_term_surfaces),
     )
 
 

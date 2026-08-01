@@ -52,7 +52,9 @@ def test_entity_gate_deflates_generic_answer():
         )
     )
 
-    assert result.score == 2.0  # 10 * 0.2
+    # 0.85 满分通道被实体门阻止 → 0.9 * 10 = 9 → 门 ×0.2 → 1.8
+    # 先前走满分通道时是 10 * 0.2 = 2.0，新逻辑更严格
+    assert result.score == 1.8
     assert result.metadata["bounded_corrections"]["gated_points"] == ["p1"]
     diag = result.metadata["point_diagnostics"][0]
     assert diag["entity_gate"] is True
@@ -78,7 +80,7 @@ def test_entity_gate_respects_equivalence_table():
 
 
 def test_entity_gate_skips_single_entity_points():
-    """实体数 < entity_gate_min_entities 的点不启用门槛（防误伤）。"""
+    """单实体评分点（entity_gate_min_entities=2）不触发完整实体门槛，但 0.85 满分通道仍受实体前置条件约束。"""
     result = _scorer(0.9).score(
         _req(
             scoring_points=[{"id": "p1", "text": "提高查询效率", "score": 10}],
@@ -86,7 +88,9 @@ def test_entity_gate_skips_single_entity_points():
         )
     )
 
-    assert result.score == 10.0
+    # 0.85 满分通道被阻止（实体零命中、similarity 虚高）：0.9*10=9.0
+    # 单实体点不触发 entity_gate（entity_gate_min_entities=2），所以不被额外压分
+    assert result.score == 9.0
     assert result.metadata["bounded_corrections"]["gated_points"] == []
 
 
