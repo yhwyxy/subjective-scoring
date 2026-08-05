@@ -899,6 +899,25 @@ class TextRerankerScorer:
                         {"point_id": point.id, "kind": correction_applied}
                     )
 
+            # 套话签名（点级），0.85 满分通道与实体门槛共用：
+            # - _stem_only：整卷只命中题干已有术语，未命中任何评分点独有实体；
+            # - _platitude_short：短答案 + 相似度虚高 + 独有实体零命中 + 覆盖率过低。
+            # exclusive_hits > 0 说明命中了评分点独有的内容，不应判定为套话。
+            _stem_only = (
+                answer_stem_only_hits
+                and entity_hits is not None
+                and entity_hits.exclusive_hits == 0
+            )
+            _platitude_short = (
+                len(student) <= 80
+                and profile is not None
+                and entity_hits is not None
+                and entity_hits.entity_total > 0
+                and calibrated_sim >= 0.95
+                and entity_hits.exclusive_hits == 0
+                and entity_hits.total / entity_hits.entity_total <= 0.3
+            )
+
             if confident_hard_hits:
                 relation = PointRelation.CONTRADICTED
                 relation_confidence = max(hit.confidence for hit in confident_hard_hits)
@@ -938,11 +957,14 @@ class TextRerankerScorer:
 
             if relation == PointRelation.SUPPORTED:
                 supported_count += 1
-                # 0.85 满分通道的实体前置条件：相似度再高，关键实体零命中或
-                # 命中比例过低时也不给满分——纯套话答案语义相关但无实质内容，
-                # 或只命中了题干泛词（如"焊条"）但未覆盖评分点的区别性实体。
-                # 与 entity_gate 独立：这里只阻止满分通道，不额外压分；
-                # 实体零命中的套话仍然能拿到 calibrated_sim * score 的残余分。
+                # 0.85 满分通道的实体前置条件：相似度再高，套话签名存在时
+                # 也不给满分——整卷零命中、只命中题干术语、或短答案 + 虚高
+                # 相似度 + 独有实体零命中（覆盖率≤0.3）。与实体门槛共用同一
+                # 套话判定；区别是这里只阻止满分通道，不额外压分（套话仍拿到
+                # calibrated_sim * score 的残余分）。
+                # 不按覆盖率比例拦截：改述型答案常因同义表述未命中全部实体
+                # （如 1/2），但整卷已命中关键实体即视为实质作答，交给语义
+                # 相似度判断（等价表/语义覆盖见 test_entity_gate_spares_*）。
                 # entity_gate_min_entities 不限制此处——任何有实体的评分点都
                 # 应防止套话用纯语义相似度拿到满分。
                 _full_mark_blocked = (
@@ -951,11 +973,9 @@ class TextRerankerScorer:
                     and entity_hits is not None
                     and corrections.enable_entity_gate
                     and (
-                        entity_hits.total == 0
-                        or (
-                            entity_hits.entity_total > 0
-                            and entity_hits.total / entity_hits.entity_total < 0.6
-                        )
+                        (answer_zero_entity_hits and entity_hits.total == 0)
+                        or _stem_only
+                        or _platitude_short
                     )
                 )
                 if _full_mark_blocked:
@@ -1002,25 +1022,14 @@ class TextRerankerScorer:
 
             # 实体门槛：句段相似度再高，整卷关键实体零命中也按系数压分（套话拦截）。
             # 与保底互斥——保底触发意味着实体命中，此处必然不触发。
-            # 增强：额外检测"题干复述"——答案只命中了题干已出现的术语，
-            # 未命中任何评分点独有实体（exclusive_hits == 0），同样按系数压分。
-            # 进一步增强：短答案套话签名——答案很短（< 80 字）且整卷评分点
-            # 相似度极高（>= 0.95）时，即使通过等价表泛词命中了少数实体，
-            # 只要独有实体完全未命中（exclusive_hits == 0）且覆盖率不超过 30%，
-            # 仍视为套话并压分。
+            # 套话判定与 0.85 满分通道共用（_stem_only / _platitude_short）：
+            # - 题干复述：答案只命中了题干已出现的术语，未命中评分点独有实体；
+            # - 短答案套话签名：答案很短（< 80 字）且相似度虚高（>= 0.95）时，
+            #   即使通过等价表泛词命中了少数实体，只要独有实体完全未命中
+            #   （exclusive_hits == 0）且覆盖率不超过 30%，仍视为套话并压分。
             # 注意：exclusive_hits > 0 意味着命中了评分点独有的内容，不应压分。
             # 阈值从 0.5 降至 0.3 降低对正确短答案的误伤。
             entity_gated = False
-            _stem_only = answer_stem_only_hits and entity_hits is not None and entity_hits.exclusive_hits == 0
-            _platitude_short = (
-                len(student) <= 80
-                and profile is not None
-                and entity_hits is not None
-                and entity_hits.entity_total > 0
-                and calibrated_sim >= 0.95
-                and entity_hits.exclusive_hits == 0
-                and entity_hits.total / entity_hits.entity_total <= 0.3
-            )
             if (
                 profile is not None
                 and entity_hits is not None
