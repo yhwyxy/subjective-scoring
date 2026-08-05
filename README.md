@@ -286,6 +286,8 @@ HTTP/HTTPS 代理通过标准环境变量（例如 `HTTP_PROXY`、`HTTPS_PROXY`�
 
 v0.1.12 起可选接入 OpenAI 兼容的 `/chat/completions` 网关做全题型大模型判分。**一旦启用，text / code / sql / calculation 四种题型全部走 LLM 评分**（不做按题型分流）；经典引擎保留为降级后端，未启用时行为与旧版本完全一致。
 
+v0.1.13：文本引擎 0.85 满分通道改用精确套话签名判定（整卷实体零命中 / 题干复述 / 短答案相似度虚高），命中评分点独有实体的等价改写与改述答案不再被压分。
+
 ```python
 from subjective_scoring import LLMJudgeConfig, SubjectiveScoringService
 
