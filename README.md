@@ -14,6 +14,7 @@
 - **可降级**：无 GPU / 无模型时词法回退，单测不下载权重
 - **确定性保护**：空白答案直接 0 分；规范化后与标准答案一致时直接满分，均不调用模型
 - **远程韧性**：请求级校准曲线、有限重试和脱敏错误，不创建内部并发
+- **LLM 判分分支**：可选 OpenAI 兼容网关全题型判分，失败三层降级，输出契约不变
 
 ## 安装
 
@@ -281,13 +282,45 @@ HTTP/HTTPS 代理通过标准环境变量（例如 `HTTP_PROXY`、`HTTPS_PROXY`�
 }
 ```
 
+## LLM 判分分支
+
+v0.1.12 起可选接入 OpenAI 兼容的 `/chat/completions` 网关做全题型大模型判分。**一旦启用，text / code / sql / calculation 四种题型全部走 LLM 评分**（不做按题型分流）；经典引擎保留为降级后端，未启用时行为与旧版本完全一致。
+
+```python
+from subjective_scoring import LLMJudgeConfig, SubjectiveScoringService
+
+service = SubjectiveScoringService(
+    llm_judge=LLMJudgeConfig(
+        url="https://router.tumuer.me/v1",   # 兼容传完整 /chat/completions 地址
+        api_key=os.environ["LLM_JUDGE_API_KEY"],
+        model=os.environ["LLM_JUDGE_MODEL"],
+    ),
+    judge_fallback=True,  # LLM 失败静默回退经典引擎，避免整卷宕机
+)
+```
+
+判分行为：
+
+- **确定性短路**（不消耗 API）：空白答案直接 0 分；规范化后与标准答案完全一致直接满分。
+- **逐点评分**：Prompt 携带题干、评分点、参考答案与学生答案，模型严格按评分点给分并输出 JSON。
+- **校验**：分数裁剪到 `[0, 单点满分]`、总分封顶 `max_score`、未知 `point_id` 丢弃、缺失评分点按 0 分、`confidence` 按评分点分值加权平均。
+- **开放题**（`scoring_points=[]`）：自动构造单隐式评分点 `whole` 参与整题综合判分，低置信照常上抛人工。
+- **三层降级**：LLM 失败 → 经典引擎（`judge_fallback=True` 时）→ 0 分 + 强制人工复核（无降级后端时）。
+- **请求级回退**（决策 D5）：`scoring_config` 传 `judge_backend="reranker"` 可对单题/单卷显式回退经典引擎，默认永远是 LLM：
+
+```python
+service.score({..., "scoring_config": {"judge_backend": "reranker"}})
+```
+
+依赖与安全：使用 `remote` extra 的 httpx，不新增依赖；api_key 以 SecretStr 私有存储，不进 `repr` / 异常文本；异常不整段回显网关响应体。
+
 ## 流水线
 
 ```text
 ScoringRequest
     → QuestionTypeRouter（元数据优先）
     → InputNormalizer（按 text/sql/code 差异化清洗）
-    → TextRerankerScorer | SQLStructureScorer | CodeHybridScorer
+    → LLMJudgeScorer（启用时）| TextRerankerScorer | SQLStructureScorer | CodeHybridScorer
     → ScoreAggregator
     → ScoringResult
 ```
@@ -306,10 +339,14 @@ from subjective_scoring import (
     ReviewLevel,
     ScoringPoint,
     ScoringOptions,
+    LLMJudgeConfig,
+    LLMJudgeClient,
+    LLMJudgeScorer,
+    JudgeBackend,
 )
 ```
 
-高级组件：`TextRerankerScorer`、`SQLStructureScorer`、`CodeHybridScorer`、`InputNormalizerComponent`、`QuestionTypeRouter`、`ScoreAggregatorComponent`。
+高级组件：`TextRerankerScorer`、`SQLStructureScorer`、`CodeHybridScorer`、`LLMJudgeScorer`、`InputNormalizerComponent`、`QuestionTypeRouter`、`ScoreAggregatorComponent`。
 
 限制：第一阶段不会执行学生代码或 SQL。代码题可通过 `code_scoring_profile` 使用 `nested_loop_static` / `find_index_static` 模板；模板只做静态验证，运行时边界行为仍可能需要复核。SQL 第一阶段只自动比较单条 `SELECT`，DML、DDL、多语句和解析失败答案为 0 分并要求复核。
 
