@@ -63,6 +63,14 @@ class ScoringDecision(str, Enum):
     MANUAL_REVIEW = "manual_review"
 
 
+class JudgeBackend(str, Enum):
+    """请求级判分后端选择。"""
+
+    AUTO = "auto"
+    LLM = "llm"
+    RERANKER = "reranker"
+
+
 # 复核等级严重程度：数值越大越严格，供 Aggregator 取最严结果。
 REVIEW_LEVEL_RANK: dict[ReviewLevel, int] = {
     ReviewLevel.AUTO_PASS: 0,
@@ -350,6 +358,10 @@ class ScoringOptions(BaseModel):
     calibration_points: tuple[tuple[float, float], ...] | None = Field(
         default=None,
         description="本次文本评分使用的单调校准曲线控制点",
+    )
+    judge_backend: JudgeBackend = Field(
+        default=JudgeBackend.AUTO,
+        description="请求级判分后端选择：auto 跟随服务级配置；llm 强制 LLM；reranker 显式回退经典引擎",
     )
 
     @field_validator("calibration_points")

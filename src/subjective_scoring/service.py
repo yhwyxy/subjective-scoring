@@ -27,6 +27,7 @@ from subjective_scoring.components.router import (
 from subjective_scoring.engines.code_hybrid import CodeHybridScorer
 from subjective_scoring.engines.calculation import CalculationScorer
 from subjective_scoring.engines.calibration import ScoreCalibrator
+from subjective_scoring.engines.llm_judge import LLMJudgeConfig, LLMJudgeScorer
 from subjective_scoring.engines.sql_structure import SQLStructureScorer
 from subjective_scoring.engines.text_reranker import TextRerankerScorer
 from subjective_scoring.models import (
@@ -125,6 +126,8 @@ class SubjectiveScoringService:
         text_pair_scorer=None,
         code_pair_scorer=None,
         text_calibrator: ScoreCalibrator | None = None,
+        llm_judge: LLMJudgeConfig | None = None,
+        judge_fallback: bool = True,
     ) -> None:
         """创建评分服务。
 
@@ -133,6 +136,13 @@ class SubjectiveScoringService:
             二者相同则进程内只缓存加载一份权重。
             也可通过环境变量覆盖：
               SUBJECTIVE_SCORING_TEXT_MODEL / SUBJECTIVE_SCORING_CODE_MODEL
+        llm_judge:
+            提供时，TEXT / CODE / SQL / CALCULATION 四类题型全部注册
+            LLMJudgeScorer（决策 D1：选 LLM 即全量，不做按题型分流）；
+            None 时行为与现状完全一致。
+        judge_fallback:
+            LLM 失败是否回退经典引擎（决策 D7，默认开启）；False 时失败即
+            0 分 + 强制人工复核。
         """
         import os
 
@@ -154,24 +164,49 @@ class SubjectiveScoringService:
         if scorers is not None:
             scorer_map = dict(scorers)
         else:
-            scorer_map = {
-                ScoringMode.TEXT: text_scorer
-                or TextRerankerScorer(
-                    pair_scorer=text_pair_scorer,
-                    allow_model_load=allow_model_load,
-                    model_name=self.text_model,
-                    calibrator=text_calibrator,
-                ),
-                ScoringMode.SQL: sql_scorer or SQLStructureScorer(),
-                ScoringMode.CODE: code_scorer
-                or CodeHybridScorer(
-                    pair_scorer=code_pair_scorer,
-                    allow_model_load=allow_model_load,
-                    strip_comments=strip_code_comments,
-                    model_name=self.code_model,
-                ),
-                ScoringMode.CALCULATION: CalculationScorer(),
-            }
+            classic_text = text_scorer or TextRerankerScorer(
+                pair_scorer=text_pair_scorer,
+                allow_model_load=allow_model_load,
+                model_name=self.text_model,
+                calibrator=text_calibrator,
+            )
+            classic_sql = sql_scorer or SQLStructureScorer()
+            classic_code = code_scorer or CodeHybridScorer(
+                pair_scorer=code_pair_scorer,
+                allow_model_load=allow_model_load,
+                strip_comments=strip_code_comments,
+                model_name=self.code_model,
+            )
+            classic_calc = CalculationScorer()
+            if llm_judge is None:
+                scorer_map = {
+                    ScoringMode.TEXT: classic_text,
+                    ScoringMode.SQL: classic_sql,
+                    ScoringMode.CODE: classic_code,
+                    ScoringMode.CALCULATION: classic_calc,
+                }
+            else:
+                # D1：选 LLM 即全量，四类题型全部走 LLM 判分；
+                # 经典引擎（含显式注入的 text_scorer= / code_scorer= 等）作为降级后端。
+                fallback = judge_fallback
+                scorer_map = {
+                    ScoringMode.TEXT: LLMJudgeScorer(
+                        config=llm_judge,
+                        fallback=classic_text if fallback else None,
+                    ),
+                    ScoringMode.SQL: LLMJudgeScorer(
+                        config=llm_judge,
+                        fallback=classic_sql if fallback else None,
+                    ),
+                    ScoringMode.CODE: LLMJudgeScorer(
+                        config=llm_judge,
+                        fallback=classic_code if fallback else None,
+                    ),
+                    ScoringMode.CALCULATION: LLMJudgeScorer(
+                        config=llm_judge,
+                        fallback=classic_calc if fallback else None,
+                    ),
+                }
 
         self.normalizer = normalizer or InputNormalizerComponent(
             strip_code_comments=strip_code_comments,
